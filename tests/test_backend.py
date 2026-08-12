@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from prompt_batch.backend import create_backend
+from prompt_batch.backends import create_backend
 
 
 class BackendTests(unittest.TestCase):

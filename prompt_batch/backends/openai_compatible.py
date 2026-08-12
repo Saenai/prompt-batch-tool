@@ -6,11 +6,11 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-from .config import join_endpoint
+from ..config import join_endpoint
 
 
 @dataclass(frozen=True)
-class OpenAIChatCompletionsBackend:
+class OpenAICompatibleBackend:
     config: dict[str, Any]
     base_url: str
 
@@ -68,27 +68,3 @@ class OpenAIChatCompletionsBackend:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             raw_response = response.read().decode("utf-8-sig")
         return raw_response, json.loads(raw_response)
-
-
-def backend_identity(config: dict[str, Any], base_url: str) -> dict[str, Any]:
-    auth = config.get("auth", {"type": "none"})
-    safe_auth = {
-        key: auth[key]
-        for key in ("type", "environment_variable", "header", "prefix")
-        if key in auth
-    }
-    return {
-        "adapter": config.get("adapter"),
-        "base_url": base_url,
-        "models_endpoint": config.get("models_endpoint"),
-        "chat_endpoint": config.get("chat_endpoint"),
-        "request_body": config.get("request_body", {}),
-        "auth": safe_auth,
-    }
-
-
-def create_backend(config: dict[str, Any], base_url: str) -> OpenAIChatCompletionsBackend:
-    adapter = str(config.get("adapter", ""))
-    if adapter == "openai-chat-completions":
-        return OpenAIChatCompletionsBackend(config, base_url)
-    raise ValueError(f"Unsupported backend adapter: {adapter}")
