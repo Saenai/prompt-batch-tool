@@ -11,6 +11,7 @@
 - 断点续跑、仅重试失败项和结构化 GUI 进度；
 - 分层中文文档和统一命名约定。
 - Windows/Python 3.11 与 3.14 持续集成，以及传输超时、无效 JSON、模型缺失、部分失败和进程终止测试。
+- Windows x64 便携 ZIP、CI artifact、`v*` tag 自动 Release，以及中英日三语 README。
 
 ### Changed
 

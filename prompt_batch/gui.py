@@ -23,13 +23,24 @@ from .runtime import terminate_process_tree
 from .storage import atomic_write_json
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent.parent
+)
 RUN_STRATEGY_LABELS = {
     "new": "新运行",
     "resume": "续跑未完成",
     "retry-failed": "仅重试失败",
 }
 RUN_STRATEGY_KEYS = {label: key for key, label in RUN_STRATEGY_LABELS.items()}
+
+
+def engine_command(engine_path: Path) -> list[str]:
+    """Return the invocation prefix for a source script or packaged CLI."""
+    if engine_path.suffix.casefold() in {".py", ".pyw"}:
+        return [sys.executable, "-B", str(engine_path)]
+    return [str(engine_path)]
 
 
 class PromptBatchApp:
@@ -334,7 +345,7 @@ class PromptBatchApp:
             raise ValueError("Seed base 超出 Int32 范围")
         self.temp_manifest = self._create_manifest()
         profile_path = self.profiles[self.profile_var.get()][0]
-        command = [sys.executable, "-B", str(self.paths["engine"]),
+        command = [*engine_command(self.paths["engine"]),
                    "--app-config", str(self.config_path), "--profile", str(profile_path),
                    "--input-manifest", str(self.temp_manifest), "--mode", self.mode_var.get(),
                    "--base-url", self.base_url_var.get().strip(), "--repeats", str(repeats), "--max-tokens", str(max_tokens),
@@ -530,7 +541,8 @@ def self_test(config_path: Path) -> int:
                                                     for tier in group_parameter_tiers(list(group.models), tiering)]}
                                for group in groups],
               "state_path": str(paths["state"]), "python": sys.executable, "tk_version": tk.TkVersion}
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if sys.stdout is not None:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["engine_exists"] and profiles and models and groups else 1
 
 

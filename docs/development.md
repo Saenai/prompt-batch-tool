@@ -20,7 +20,18 @@ python .\batch_cli.py --help
 
 工作流依次执行源码编译、完整单元测试、GUI 模块导入、CLI 帮助和 PowerShell wrapper 语法解析。应用依赖 Python 标准库，因此 CI 不应出现安装第三方运行时依赖的步骤。
 
-当前 action 使用 `actions/checkout@v7` 与 `actions/setup-python@v6`，并将令牌权限限制为 `contents: read`。升级 action 主版本时应先查阅官方 release notes，再更新这里和工作流。
+测试通过后，`package-windows` 使用固定版本的 PyInstaller 构建两个单文件 executable，并将配置、profile、schema 和文档组合成便携 ZIP。普通运行保留 14 天 artifact；`v*` tag 触发独立的 release job，将 ZIP 和 SHA-256 文件发布到 GitHub Releases。只有 release job 获得 `contents: write`，测试和打包保持只读权限。
+
+当前 action 使用 `actions/checkout@v7`、`actions/setup-python@v6`、`actions/upload-artifact@v7` 与 `actions/download-artifact@v8`。升级 action 或 PyInstaller 版本时应先查阅官方 release notes，再更新这里、工作流和仓库质量测试。
+
+本地构建发布包：
+
+```powershell
+python -m pip install pyinstaller==6.21.0
+.\packaging\windows\build-release.ps1 -Version dev -OutputDirectory artifacts
+```
+
+GUI 和 CLI 分成两个 executable：GUI 使用 windowed subsystem，不弹出控制台；CLI 保留 stdout/stderr，供 GUI 的 JSONL 进度协议和命令行使用。强行把两者压成一个 windowed exe 会失去可靠的标准输出，因此“两枚 exe、一个便携 ZIP”是刻意选择，并非打包工具心血来潮。
 
 ## 改动落点
 

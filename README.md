@@ -1,8 +1,16 @@
 # Prompt Batch Generator
 
+[简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md)
+
 一个面向 OpenAI-compatible Chat Completions 接口的本地 prompt 批量生成工具。它按“模型 × 输入 × 重复次数”执行任务，并通过 profile 描述 system prompt、模式、校验、观察项和输出命名。
 
 项目只依赖 Python 标准库；GUI 使用 Tkinter，PowerShell 仅作为旧入口兼容层。
+
+## 便携版
+
+CI 会为每次提交构建 Windows x64 便携 ZIP，其中包含 GUI、CLI、默认配置、profile、schema 和文档，无需预装 Python。可从对应 GitHub Actions 运行的 artifact 下载；推送 `v*` tag 时，同一 ZIP 和 SHA-256 校验文件会自动发布到 [GitHub Releases](https://github.com/Saenai/prompt-batch-tool/releases)。
+
+解压后双击 `launch-gui.cmd`。默认目录关系按 `.llama.cpp/prompt-batch-tool`、相邻 `llama-swap` 和 `llama-current` 设计；放到其他位置时应修改 `config/app.json`。
 
 ## 快速开始
 
@@ -63,6 +71,8 @@ profiles/                   任务 profile
 schemas/                    JSON Schema
 docs/                       维护文档
 tests/                      标准库单元测试
+packaging/windows/          Windows 便携包构建脚本
+.github/workflows/          CI、artifact 与 tag release
 ```
 
 根目录的 `app.py`、`batch_cli.py`、`run-batch.ps1` 是稳定兼容入口；新代码应放在 `prompt_batch/` 内。

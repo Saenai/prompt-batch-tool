@@ -11,10 +11,13 @@ venv/
 *.tmp
 *.log
 router-logs/
+artifacts/
+build/
+dist/
+*.spec
 
 # Editor and OS metadata
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
-

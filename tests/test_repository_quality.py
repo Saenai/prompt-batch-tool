@@ -63,7 +63,8 @@ class RepositoryQualityTests(unittest.TestCase):
                 self.assertTrue(forbidden.isdisjoint(imports))
 
     def test_local_markdown_links_exist(self) -> None:
-        markdown_files = [PROJECT_ROOT / "README.md", PROJECT_ROOT / "CHANGELOG.md"]
+        markdown_files = list(PROJECT_ROOT.glob("README*.md"))
+        markdown_files.append(PROJECT_ROOT / "CHANGELOG.md")
         markdown_files.extend((PROJECT_ROOT / "docs").glob("*.md"))
         link_pattern = re.compile(r"\[[^]]+\]\(([^)]+)\)")
         for document in markdown_files:
@@ -85,6 +86,20 @@ class RepositoryQualityTests(unittest.TestCase):
         self.assertIn('python-version: ["3.11", "3.14"]', workflow)
         self.assertIn("python -B -m unittest discover -s tests -v", workflow)
         self.assertIn("runs-on: windows-latest", workflow)
+
+    def test_ci_builds_artifacts_and_publishes_version_tags(self) -> None:
+        workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.assertIn("package-windows:", workflow)
+        self.assertIn("actions/upload-artifact@v7", workflow)
+        self.assertIn("actions/download-artifact@v8", workflow)
+        self.assertIn("startsWith(github.ref, 'refs/tags/v')", workflow)
+        self.assertIn("gh release create", workflow)
+
+    def test_three_readme_languages_are_present(self) -> None:
+        for name in ("README.md", "README.en.md", "README.ja.md"):
+            text = (PROJECT_ROOT / name).read_text(encoding="utf-8")
+            self.assertIn("README.en.md", text)
+            self.assertIn("README.ja.md", text)
 
 
 if __name__ == "__main__":

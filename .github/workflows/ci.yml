@@ -52,3 +52,86 @@ jobs:
             $errors | Format-List
             exit 1
           }
+
+  package-windows:
+    name: Windows portable package
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install packaging tool
+        run: python -m pip install --disable-pip-version-check pyinstaller==6.21.0
+
+      - name: Build portable package
+        shell: pwsh
+        run: |
+          $version = if ('${{ github.ref_type }}' -eq 'tag') {
+            '${{ github.ref_name }}'
+          } else {
+            '${{ github.sha }}'.Substring(0, 7)
+          }
+          .\packaging\windows\build-release.ps1 -Version $version -OutputDirectory artifacts
+
+      - name: Smoke-test packaged executables
+        shell: pwsh
+        run: |
+          $package = Get-Item .\artifacts\prompt-batch-tool
+
+          & (Join-Path $package.FullName 'PromptBatchCLI.exe') --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Packaged CLI failed: $LASTEXITCODE" }
+
+          $fallback = Join-Path $package.Parent.FullName 'llama-swap\config.yaml'
+          New-Item -ItemType Directory -Path (Split-Path $fallback) -Force | Out-Null
+          "models:`n  smoke-model:`n    name: Smoke Model" | Set-Content -Encoding UTF8 $fallback
+          $gui = Start-Process -FilePath (Join-Path $package.FullName 'PromptBatchGenerator.exe') `
+            -ArgumentList @('--config', (Join-Path $package.FullName 'config\app.json'), '--self-test') `
+            -WindowStyle Hidden -Wait -PassThru
+          if ($gui.ExitCode -ne 0) { throw "Packaged GUI self-test failed: $($gui.ExitCode)" }
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v7
+        with:
+          name: PromptBatchGenerator-windows-x64
+          path: |
+            artifacts/PromptBatchGenerator-*-windows-x64.zip
+            artifacts/PromptBatchGenerator-*-windows-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish tagged release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: PromptBatchGenerator-windows-x64
+          path: release-assets
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          release-assets/*.zip
+          release-assets/*.sha256
+          --repo "$GITHUB_REPOSITORY"
+          --verify-tag
+          --generate-notes
+          --title "$GITHUB_REF_NAME"

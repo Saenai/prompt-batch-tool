@@ -1,5 +1,11 @@
 # 运行、输入与输出
 
+## Windows 便携版
+
+CI artifact 和版本 Release 提供 Windows x64 便携 ZIP。解压后运行 `launch-gui.cmd`；包内包含 `PromptBatchGenerator.exe` 和供 GUI 调用的 `PromptBatchCLI.exe`，无需安装 Python。
+
+默认 `config/app.json` 假定该目录与 `llama-swap`、`llama-current` 处于既定的 `.llama.cpp` 结构。若移动到其他目录，应调整相对路径。每个发布 ZIP 都附带 `.sha256` 文件用于完整性核对。
+
 ## GUI
 
 ```powershell
@@ -28,6 +34,12 @@ model 2 → repeat 1 → input 1, input 2, ...
 
 ```powershell
 python .\batch_cli.py --help
+```
+
+便携版对应命令为：
+
+```powershell
+.\PromptBatchCLI.exe --help
 ```
 
 `--validate-only` 只做配置和输入准备。`--event-format jsonl` 输出 GUI 可消费的结构化事件；普通命令行默认输出可读文本。
