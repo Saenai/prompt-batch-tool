@@ -12,7 +12,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-from prompt_batch.config import load_json, resolve_config_paths
+from prompt_batch.config import load_app_config, load_json, load_profile, resolve_config_paths
 from prompt_batch.model_source import (
     ModelGroup,
     ModelTier,
@@ -44,7 +44,7 @@ class BatchApp:
         self.root = root
         self.config_path = config_path.resolve()
         self.config_dir = self.config_path.parent
-        self.config = load_json(self.config_path)
+        self.config = load_app_config(self.config_path)
         self.paths = resolve_config_paths(self.config, self.config_path)
         self.profiles = self._load_profiles(self.paths["profiles"])
         self.state = self._load_state()
@@ -91,7 +91,6 @@ class BatchApp:
         self.root.geometry(self.state.get("geometry", "1280x820"))
         self.root.minsize(1050, 680)
         self._build_ui()
-        self.root.after(60, self._restore_pane_sash)
         self._restore_inputs()
         self._apply_profile_modes()
         self.filter_var.trace_add("write", lambda *_: self._render_models())
@@ -103,7 +102,7 @@ class BatchApp:
     def _load_profiles(directory: Path) -> dict[str, tuple[Path, dict]]:
         profiles: dict[str, tuple[Path, dict]] = {}
         for path in sorted(directory.glob("*.json")):
-            payload = load_json(path)
+            payload = load_profile(path)
             profile_id = str(payload.get("id", "")).strip()
             if profile_id:
                 profiles[profile_id] = (path.resolve(), payload)
@@ -124,14 +123,14 @@ class BatchApp:
     def _build_ui(self) -> None:
         outer = ttk.Frame(self.root, padding=10)
         outer.pack(fill="both", expand=True)
-        paned = ttk.Panedwindow(outer, orient="horizontal")
-        paned.pack(fill="both", expand=True)
-        self.main_paned = paned
+        outer.columnconfigure(0, weight=1, uniform="main-column")
+        outer.columnconfigure(1, weight=1, uniform="main-column")
+        outer.rowconfigure(0, weight=1)
 
-        left = ttk.LabelFrame(paned, text="任务与输入", padding=8)
-        right = ttk.LabelFrame(paned, text="模型与执行", padding=8)
-        paned.add(left, weight=1)
-        paned.add(right, weight=1)
+        left = ttk.Frame(outer)
+        right = ttk.Frame(outer)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        right.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
         left.columnconfigure(0, weight=1)
         left.rowconfigure(1, weight=1)
         right.columnconfigure(0, weight=1)
@@ -316,23 +315,14 @@ class BatchApp:
         if self.remember_direct_var.get():
             self.direct_input.insert("1.0", self.state.get("direct_input", ""))
 
-    def _restore_pane_sash(self) -> None:
-        try:
-            position = int(self.state.get("pane_sash", 0))
-            if position > 0:
-                self.main_paned.sashpos(0, position)
-        except (tk.TclError, TypeError, ValueError):
-            pass
-
     def refresh_models(self) -> None:
         self.model_source_var.set("模型：加载中…")
         base_url = self.base_url_var.get().strip()
-        endpoint = self.config["backend"]["models_endpoint"]
         model_config = self.paths["model_config"]
         fallback_format = self.config.get("model_source", {}).get("fallback_format")
 
         def worker() -> None:
-            self.events.put(("models", discover_models(base_url, endpoint, model_config, fallback_format)))
+            self.events.put(("models", discover_models(base_url, self.config["backend"], model_config, fallback_format)))
         threading.Thread(target=worker, daemon=True).start()
 
     def _apply_models(self, models: list[tuple[str, str]], source: str) -> None:
@@ -657,12 +647,7 @@ class BatchApp:
 
     def _save_state(self) -> None:
         direct = self.direct_input.get("1.0", "end-1c") if self.remember_direct_var.get() else ""
-        try:
-            pane_sash = self.main_paned.sashpos(0)
-        except tk.TclError:
-            pane_sash = 0
         state = {"schema_version": 1, "geometry": self.root.geometry(), "profile": self.profile_var.get(), "mode": self.mode_var.get(),
-                 "pane_sash": pane_sash,
                  "output_root": self.output_root_var.get().strip(), "run_directory": self.run_directory_var.get().strip(),
                  "system_prompt": self.system_prompt_var.get().strip(), "repeats": self._positive_int(self.repeats_var.get(), "Repeats"),
                  "max_tokens": self._positive_int(self.max_tokens_var.get(), "Max tokens"), "seed_base": self._positive_int(self.seed_base_var.get(), "Seed base"),
@@ -768,7 +753,7 @@ class BatchApp:
 
 
 def self_test(config_path: Path) -> int:
-    config = load_json(config_path)
+    config = load_app_config(config_path)
     paths = resolve_config_paths(config, config_path)
     profiles = BatchApp._load_profiles(paths["profiles"])
     models = parse_llama_swap_models(paths["model_config"])
@@ -776,6 +761,8 @@ def self_test(config_path: Path) -> int:
     groups = group_models(list(models.items()), grouping)
     tiering = grouping.get("parameter_tiers", {})
     result = {"config": str(config_path), "engine_exists": paths["engine"].is_file(), "profiles": list(profiles),
+              "app_schema_version": config["schema_version"], "backend_adapter": config["backend"]["adapter"],
+              "profile_schema_versions": {profile_id: payload["schema_version"] for profile_id, (_path, payload) in profiles.items()},
               "model_config_exists": paths["model_config"].is_file(), "config_model_count": len(models),
               "model_groups": [{"key": group.key, "label": group.label, "count": len(group.models),
                                 "parameter_tiers": [{"key": tier.key, "label": tier.label, "count": len(tier.models)}

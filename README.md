@@ -20,14 +20,18 @@ app.py (Tkinter GUI)
 batch_cli.py (CLI)
         ↓
 prompt_batch/engine.py
+        ├─ backend.py
         ├─ config.py
         ├─ model_source.py
-        └─ profile JSON
+        ├─ profile JSON
+        └─ schemas/*.schema.json
 ```
 
 - `app.py` 只处理 GUI、状态与子进程日志。
 - `batch_cli.py` 是权威命令行入口。
-- `prompt_batch/engine.py` 处理批次、HTTP、router 生命周期、校验、后处理与输出。
+- `prompt_batch/engine.py` 处理批次、router 生命周期、校验、后处理与输出。
+- `prompt_batch/backend.py` 封装 OpenAI-compatible HTTP、模型发现和环境变量认证。
+- `prompt_batch/config.py` 负责配置迁移及运行时校验；`schemas/` 提供编辑器可读取的 JSON Schema。
 - `run-batch.ps1` 仅将旧 PowerShell 参数翻译为 Python CLI 参数，不含业务逻辑。
 
 ## 执行顺序
@@ -44,11 +48,11 @@ model 2 → repeat 1 → input 1, input 2, ...
 
 ## GUI 布局
 
-GUI 仅使用 Python 自带的 Tkinter/ttk。主窗口由可拖动分隔条划为“任务与输入”和“模型与执行”两栏，各功能区使用带标题框线区分：
+GUI 仅使用 Python 自带的 Tkinter/ttk。主窗口固定为等宽两列，没有外层区域标题或可拖动分隔条；具体功能仍使用带标题框线区分：
 
 - 左栏：任务设置、输入内容；
 - 右栏：后端、模型选择、运行状态；
-- 窗口大小、左右栏分隔位置都会随状态保存。
+- 窗口大小会随状态保存。
 
 运行状态区显示结构化进度，包括当前模型、输入、重复序号、完成数以及本轮执行/跳过/失败数量。
 
@@ -65,6 +69,29 @@ GUI 仅使用 Python 自带的 Tkinter/ttk。主窗口由可拖动分隔条划�
 
 所有文件路径都相对于 `app.json` 解析，也支持 `~`、`%ENV_VAR%` 与 `${ENV_VAR}`。代码中不保存本机工作区或用户名的绝对路径。
 
+应用配置当前为 `schema_version: 2`。程序仍接受 v1，并在内存中迁移 `backend.type` 为 `backend.adapter`、补上无认证配置；不会改写原文件。高于当前版本的配置会被拒绝。`schemas/app-config.schema.json` 和 `schemas/profile.schema.json` 使用 JSON Schema Draft 2020-12；即使编辑器不执行 Schema，程序也会使用标准库完成核心字段、类型、版本和 mode 引用校验。
+
+### 后端认证
+
+本地 llama-swap 默认使用：
+
+```json
+"auth": {"type": "none"}
+```
+
+需要 API key 时，只在配置中引用环境变量：
+
+```json
+"auth": {
+  "type": "environment",
+  "environment_variable": "OPENAI_API_KEY",
+  "header": "Authorization",
+  "prefix": "Bearer "
+}
+```
+
+`header` 和 `prefix` 可调整，因此也能表达 `x-api-key` 一类认证。实际密钥只在发送请求时从环境读取，不会进入 GUI 状态、冻结配置或运行 manifest；manifest 只记录环境变量名和认证形式，以便续跑一致性检查。
+
 ### Profile
 
 `profiles/*.json` 保存任务特性。当前提供：
@@ -78,6 +105,8 @@ Profile 的主要结构：
 
 ```json
 {
+  "$schema": "../schemas/profile.schema.json",
+  "schema_version": 1,
   "id": "example",
   "display_name": "Example",
   "default_mode": "default",
@@ -108,7 +137,7 @@ system prompt 路径相对于 profile 的 `system_prompt_root`；未设置 root 
 状态文件位置由 `app.json` 的 `paths.state` 决定。GUI 关闭或开始运行时会记住：
 
 - profile 与 mode；
--输出路径、API、repeats、max tokens、seed；
+- 输出路径、API、repeats、max tokens、seed；
 - input 文件列表；
 - 模型勾选和筛选词；
 - 窗口大小。

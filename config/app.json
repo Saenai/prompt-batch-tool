@@ -1,5 +1,6 @@
 {
-  "schema_version": 1,
+  "$schema": "../schemas/app-config.schema.json",
+  "schema_version": 2,
   "app": {
     "title": "Prompt Batch Generator"
   },
@@ -14,13 +15,16 @@
     "runtime_executable": "../../llama-current/llama-server.exe"
   },
   "backend": {
-    "type": "openai-chat-completions",
+    "adapter": "openai-chat-completions",
     "base_url": "http://127.0.0.1:8081/v1",
     "models_endpoint": "/models",
     "chat_endpoint": "/chat/completions",
     "request_timeout_seconds": 3600,
     "readiness_timeout_seconds": 60,
-    "request_body": {}
+    "request_body": {},
+    "auth": {
+      "type": "none"
+    }
   },
   "router": {
     "arguments": [

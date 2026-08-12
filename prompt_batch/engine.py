@@ -8,15 +8,13 @@ import re
 import shutil
 import subprocess
 import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from .config import expand_path, join_endpoint, load_json, resolve_config_paths
-from .model_source import fetch_model_ids
+from .backend import backend_identity, create_backend
+from .config import expand_path, load_app_config, load_json, load_profile, resolve_config_paths
 
 
 LogFunction = Callable[[str], None]
@@ -87,6 +85,11 @@ def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest().upper()
 
 
+def _profile_sha256(profile: dict[str, Any]) -> str:
+    semantic_profile = {key: value for key, value in profile.items() if key != "$schema"}
+    return _sha256_text(json.dumps(semantic_profile, ensure_ascii=False, sort_keys=True))
+
+
 def _safe_id(value: str, fallback_index: int) -> str:
     safe = re.sub(r"[^\w.-]+", "-", value.strip(), flags=re.UNICODE).strip("-")
     return safe or f"input-{fallback_index:02d}"
@@ -118,13 +121,9 @@ def _prepare_batch(options: BatchOptions) -> PreparedBatch:
     if not options.model_ids:
         raise ValueError("At least one model must be selected.")
 
-    app_config = load_json(options.app_config_path)
-    profile = load_json(options.profile_path)
+    app_config = load_app_config(options.app_config_path)
+    profile = load_profile(options.profile_path)
     manifest = load_json(options.input_manifest_path)
-    if app_config.get("backend", {}).get("type") != "openai-chat-completions":
-        raise ValueError(f"Unsupported backend type: {app_config.get('backend', {}).get('type')}")
-    if not profile.get("id") or not isinstance(profile.get("modes"), dict) or not profile["modes"]:
-        raise ValueError(f"Invalid profile: {options.profile_path}")
     entries = manifest.get("inputs")
     if not isinstance(entries, list) or not entries:
         raise ValueError("Input manifest contains no inputs.")
@@ -251,28 +250,6 @@ def validate_batch(options: BatchOptions) -> ValidationReport:
     return ValidationReport(str(prepared.profile["id"]), len(options.model_ids), prepared.cases)
 
 
-def _http_json_get(uri: str, timeout: int = 10) -> dict[str, Any]:
-    request = urllib.request.Request(uri, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8-sig"))
-
-
-def _http_json_post(uri: str, payload: dict[str, Any], timeout: int) -> tuple[str, dict[str, Any]]:
-    raw_request = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    request = urllib.request.Request(uri, data=raw_request, method="POST", headers={"Content-Type": "application/json; charset=utf-8"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        raw_response = response.read().decode("utf-8-sig")
-    return raw_response, json.loads(raw_response)
-
-
-def _endpoint_ready(uri: str) -> bool:
-    try:
-        _http_json_get(uri, 5)
-        return True
-    except Exception:
-        return False
-
-
 def _terminate_process_tree(process: subprocess.Popen[Any]) -> None:
     if process.poll() is not None:
         return
@@ -365,9 +342,8 @@ def _resume_identity(prepared: PreparedBatch) -> dict[str, Any]:
     options = prepared.options
     return {
         "profile_id": str(prepared.profile["id"]),
-        "profile_sha256": _sha256_text(json.dumps(prepared.profile, ensure_ascii=False, sort_keys=True)),
-        "endpoint": prepared.base_url,
-        "backend_request_body": prepared.app_config.get("backend", {}).get("request_body", {}),
+        "profile_sha256": _profile_sha256(prepared.profile),
+        "backend": backend_identity(prepared.app_config["backend"], prepared.base_url),
         "inputs": [
             {
                 "id": case.case_id,
@@ -396,11 +372,14 @@ def _validate_resume_manifest(existing: dict[str, Any], prepared: PreparedBatch)
         for item in existing.get("inputs", [])
         if isinstance(item, dict)
     ]
+    existing_backend = existing.get("backend")
+    if existing_backend is None and existing.get("endpoint"):
+        existing_backend = backend_identity(prepared.app_config["backend"], str(existing["endpoint"]))
+        existing_backend["request_body"] = existing.get("backend_request_body", {})
     actual = {
         "profile_id": existing.get("profile_id"),
         "profile_sha256": existing.get("profile_sha256"),
-        "endpoint": existing.get("endpoint"),
-        "backend_request_body": existing.get("backend_request_body", {}),
+        "backend": existing_backend,
         "inputs": existing_inputs,
         "models": existing.get("models"),
         "repeats_per_input": existing.get("repeats_per_input"),
@@ -459,8 +438,8 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
         (input_dir / f"{case.case_id}.txt").write_text(case.content, encoding="utf-8")
         (system_dir / f"{case.case_id}.txt").write_text(case.system_prompt, encoding="utf-8")
 
-    models_uri = join_endpoint(prepared.base_url, str(app["backend"]["models_endpoint"]))
-    chat_uri = join_endpoint(prepared.base_url, str(app["backend"]["chat_endpoint"]))
+    backend = create_backend(app["backend"], prepared.base_url)
+    models_uri = backend.models_uri
     configured_base = str(app["backend"]["base_url"]).rstrip("/")
     may_start_router = prepared.base_url.rstrip("/") == configured_base
     router_process: subprocess.Popen[Any] | None = None
@@ -501,11 +480,11 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
         "updated_at": datetime.now().astimezone().isoformat(),
         "status": "running",
         "profile_id": str(profile["id"]),
-        "profile_sha256": _sha256_text(json.dumps(profile, ensure_ascii=False, sort_keys=True)),
+        "profile_sha256": _profile_sha256(profile),
         "profile_path": str(options.profile_path),
         "app_config_path": str(options.app_config_path),
         "endpoint": prepared.base_url,
-        "backend_request_body": app.get("backend", {}).get("request_body", {}),
+        "backend": backend_identity(app["backend"], prepared.base_url),
         "inputs": [
             {
                 "id": case.case_id,
@@ -537,7 +516,7 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
     _emit(event, "batch_started", run_directory=str(run_dir), total=total_requested, planned=planned_requests,
           strategy=manifest["run_strategy"])
     try:
-        if planned_requests and not _endpoint_ready(models_uri):
+        if planned_requests and not backend.ready():
             if not may_start_router:
                 raise RuntimeError(f"Endpoint is unavailable and does not match the configured local router URL: {models_uri}")
             router_process = _start_router(prepared, log_dir)
@@ -546,7 +525,7 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
             timeout = int(app["backend"].get("readiness_timeout_seconds", 60))
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
-                if _endpoint_ready(models_uri):
+                if backend.ready():
                     break
                 if router_process.poll() is not None:
                     raise RuntimeError(f"Router exited before becoming ready: exit {router_process.returncode}")
@@ -555,7 +534,7 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
                 raise RuntimeError(f"Router did not become ready: {models_uri}")
 
         if planned_requests:
-            available = {str(item["id"]) for item in _http_json_get(models_uri, 10).get("data", []) if item.get("id")}
+            available = set(backend.list_model_ids(10))
             missing_models = [model_id for model_id in options.model_ids if model_id not in available]
             if missing_models:
                 raise RuntimeError(f"Models are not visible: {', '.join(missing_models)}")
@@ -608,7 +587,7 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
                           completed=completed_items, total=total_requested)
                     started = time.perf_counter()
                     try:
-                        raw_response, response = _http_json_post(chat_uri, body, request_timeout)
+                        raw_response, response = backend.chat_completions(body, request_timeout)
                         elapsed = time.perf_counter() - started
                         (case_raw / f"{stem}.json").write_text(raw_response, encoding="utf-8")
                         choice = response["choices"][0]

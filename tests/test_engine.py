@@ -6,6 +6,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 from prompt_batch import BatchOptions, run_batch, validate_batch
 
@@ -34,6 +35,7 @@ class MockApiHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
         request = json.loads(self.rfile.read(length).decode("utf-8"))
+        request["_authorization"] = self.headers.get("Authorization")
         self.requests.append(request)
         user_content = request["messages"][-1]["content"]
         marker = '"TOKEN"' if '"TOKEN"' in user_content else "plain"
@@ -62,6 +64,9 @@ class EngineTests(unittest.TestCase):
         self.manifest_path = self.root / "inputs.json"
         self.config_path.write_text(json.dumps({
             "paths": {
+                "engine": "batch_cli.py",
+                "profiles": "profiles",
+                "state": "state.json",
                 "default_output_root": "output",
                 "router_executable": "missing-router.exe",
                 "router_working_directory": ".",
@@ -184,6 +189,20 @@ class EngineTests(unittest.TestCase):
         finished = next(event for event in events if event["type"] == "batch_finished")
         self.assertEqual((finished["executed"], finished["skipped"]), (0, 8))
 
+    def test_resume_accepts_previous_backend_identity_fields(self) -> None:
+        run_dir = run_batch(self.options(), log=lambda _message: None)
+        manifest_path = run_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        backend = manifest.pop("backend")
+        manifest["endpoint"] = backend["base_url"]
+        manifest["backend_request_body"] = backend["request_body"]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        options = self.options()
+        options.resume = True
+        run_batch(options, log=lambda _message: None)
+        self.assertEqual(len(MockApiHandler.requests), 8)
+
     def test_resume_runs_only_missing_items(self) -> None:
         run_dir = run_batch(self.options(), log=lambda _message: None)
         (run_dir / "raw" / "model-a" / "one" / "run-01.record.json").unlink()
@@ -237,6 +256,21 @@ class EngineTests(unittest.TestCase):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(manifest["status"], "interrupted")
         self.assertEqual(manifest["planned_requests_this_run"], 8)
+
+    def test_environment_auth_is_sent_without_entering_manifest(self) -> None:
+        config = json.loads(self.config_path.read_text(encoding="utf-8"))
+        config["backend"]["auth"] = {
+            "type": "environment",
+            "environment_variable": "PROMPT_BATCH_TEST_KEY",
+        }
+        self.config_path.write_text(json.dumps(config), encoding="utf-8")
+        with patch.dict("os.environ", {"PROMPT_BATCH_TEST_KEY": "secret-value"}):
+            run_dir = run_batch(self.options(), log=lambda _message: None)
+
+        self.assertTrue(all(request["_authorization"] == "Bearer secret-value" for request in MockApiHandler.requests))
+        manifest_text = (run_dir / "manifest.json").read_text(encoding="utf-8")
+        self.assertNotIn("secret-value", manifest_text)
+        self.assertIn("PROMPT_BATCH_TEST_KEY", manifest_text)
 
 
 if __name__ == "__main__":

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
 import re
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from .config import join_endpoint
+from .backend import create_backend
 
 
 @dataclass(frozen=True)
@@ -52,21 +51,24 @@ def parse_llama_swap_models(path: Path) -> dict[str, str]:
 
 
 def fetch_model_ids(base_url: str, endpoint: str, timeout: float = 2.5) -> list[str]:
-    request = urllib.request.Request(join_endpoint(base_url, endpoint), headers={"Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8-sig"))
-    return sorted({str(item["id"]) for item in payload.get("data", []) if item.get("id")}, key=str.casefold)
+    config = {
+        "adapter": "openai-chat-completions",
+        "models_endpoint": endpoint,
+        "chat_endpoint": "/chat/completions",
+        "auth": {"type": "none"},
+    }
+    return create_backend(config, base_url).list_model_ids(timeout)
 
 
 def discover_models(
     base_url: str,
-    endpoint: str,
+    backend_config: dict[str, Any],
     fallback_path: Path,
     fallback_format: str | None,
 ) -> tuple[list[tuple[str, str]], str]:
     fallback = parse_llama_swap_models(fallback_path) if fallback_format == "llama-swap-yaml" else {}
     try:
-        ids = fetch_model_ids(base_url, endpoint)
+        ids = create_backend(backend_config, base_url).list_model_ids(2.5)
         return [(model_id, fallback.get(model_id, model_id)) for model_id in ids], "API"
     except Exception:
         return sorted(fallback.items(), key=lambda item: item[0].casefold()), "配置文件"

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/prompt-batch-tool/app-config.schema.json",
+  "title": "Prompt Batch Generator application config",
+  "type": "object",
+  "required": ["schema_version", "paths", "backend", "router", "runtime"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": 2},
+    "app": {"type": "object"},
+    "paths": {
+      "type": "object",
+      "required": [
+        "engine", "profiles", "state", "default_output_root", "model_config",
+        "router_executable", "router_working_directory", "runtime_executable"
+      ],
+      "additionalProperties": {"type": "string"}
+    },
+    "backend": {
+      "type": "object",
+      "required": [
+        "adapter", "base_url", "models_endpoint", "chat_endpoint",
+        "request_timeout_seconds", "readiness_timeout_seconds"
+      ],
+      "properties": {
+        "adapter": {"const": "openai-chat-completions"},
+        "base_url": {"type": "string", "minLength": 1},
+        "models_endpoint": {"type": "string", "minLength": 1},
+        "chat_endpoint": {"type": "string", "minLength": 1},
+        "request_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "readiness_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "request_body": {"type": "object"},
+        "auth": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["type"],
+              "properties": {"type": {"const": "none"}},
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["type", "environment_variable"],
+              "properties": {
+                "type": {"const": "environment"},
+                "environment_variable": {"type": "string", "minLength": 1},
+                "header": {"type": "string", "minLength": 1},
+                "prefix": {"type": "string"}
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "router": {
+      "type": "object",
+      "required": ["arguments", "managed_process_names"],
+      "properties": {
+        "arguments": {"type": "array", "items": {"type": "string"}},
+        "managed_process_names": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["version_arguments"],
+      "properties": {
+        "version_arguments": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "model_source": {"type": "object"},
+    "defaults": {"type": "object"}
+  },
+  "additionalProperties": true
+}
