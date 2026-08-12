@@ -24,6 +24,12 @@ from prompt_batch.model_source import (
 
 
 APP_DIR = Path(__file__).resolve().parent
+RUN_STRATEGY_LABELS = {
+    "new": "新运行",
+    "resume": "续跑未完成",
+    "retry-failed": "仅重试失败",
+}
+RUN_STRATEGY_KEYS = {label: key for key, label in RUN_STRATEGY_LABELS.items()}
 
 
 def atomic_write_json(path: Path, payload: dict) -> None:
@@ -75,13 +81,17 @@ class BatchApp:
         self.base_url_var = tk.StringVar(value=self.state.get("base_url", self.config["backend"]["base_url"]))
         self.filter_var = tk.StringVar(value=self.state.get("model_filter", ""))
         self.remember_direct_var = tk.BooleanVar(value=bool(self.state.get("remember_direct_input", defaults.get("remember_direct_input", False))))
+        strategy_key = str(self.state.get("run_strategy", "new"))
+        self.run_strategy_var = tk.StringVar(value=RUN_STRATEGY_LABELS.get(strategy_key, RUN_STRATEGY_LABELS["new"]))
         self.status_var = tk.StringVar(value="就绪")
+        self.progress_detail_var = tk.StringVar(value="尚未开始")
         self.model_source_var = tk.StringVar(value="模型：尚未加载")
 
         self.root.title(self.config.get("app", {}).get("title", "Prompt Batch Generator"))
-        self.root.geometry(self.state.get("geometry", "980x920"))
-        self.root.minsize(800, 700)
+        self.root.geometry(self.state.get("geometry", "1280x820"))
+        self.root.minsize(1050, 680)
         self._build_ui()
+        self.root.after(60, self._restore_pane_sash)
         self._restore_inputs()
         self._apply_profile_modes()
         self.filter_var.trace_add("write", lambda *_: self._render_models())
@@ -114,76 +124,103 @@ class BatchApp:
     def _build_ui(self) -> None:
         outer = ttk.Frame(self.root, padding=10)
         outer.pack(fill="both", expand=True)
-        outer.columnconfigure(1, weight=1)
+        paned = ttk.Panedwindow(outer, orient="horizontal")
+        paned.pack(fill="both", expand=True)
+        self.main_paned = paned
+
+        left = ttk.LabelFrame(paned, text="任务与输入", padding=8)
+        right = ttk.LabelFrame(paned, text="模型与执行", padding=8)
+        paned.add(left, weight=1)
+        paned.add(right, weight=1)
+        left.columnconfigure(0, weight=1)
+        left.rowconfigure(1, weight=1)
+        right.columnconfigure(0, weight=1)
+        right.rowconfigure(1, weight=3)
+        right.rowconfigure(2, weight=2)
+
+        settings = ttk.LabelFrame(left, text="任务设置", padding=8)
+        settings.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        settings.columnconfigure(1, weight=1)
         row = 0
 
-        ttk.Label(outer, text="Profile").grid(row=row, column=0, sticky="w", pady=3)
+        ttk.Label(settings, text="Profile").grid(row=row, column=0, sticky="w", pady=3)
         profile_values = [f"{pid} — {payload.get('display_name', pid)}" for pid, (_, payload) in self.profiles.items()]
-        self.profile_combo = ttk.Combobox(outer, values=profile_values, state="readonly")
+        self.profile_combo = ttk.Combobox(settings, values=profile_values, state="readonly")
         self.profile_combo.grid(row=row, column=1, sticky="ew", padx=8, pady=3)
         self.profile_combo.set(self._profile_display(self.profile_var.get()))
         self.profile_combo.bind("<<ComboboxSelected>>", self._on_profile_selected)
-        ttk.Button(outer, text="重新读取", command=self._reload_profiles).grid(row=row, column=2, sticky="ew", pady=3)
+        ttk.Button(settings, text="重新读取", command=self._reload_profiles).grid(row=row, column=2, sticky="ew", pady=3)
         row += 1
 
-        row = self._path_row(outer, row, "输出根目录", self.output_root_var, lambda: self._browse_dir(self.output_root_var))
-        row = self._path_row(outer, row, "固定运行目录", self.run_directory_var, lambda: self._browse_dir(self.run_directory_var), "可选")
-        row = self._path_row(outer, row, "System Prompt 覆盖", self.system_prompt_var, self._browse_system_prompt, "可选")
+        row = self._path_row(settings, row, "输出根目录", self.output_root_var, lambda: self._browse_dir(self.output_root_var))
+        row = self._path_row(settings, row, "固定运行目录", self.run_directory_var, lambda: self._browse_dir(self.run_directory_var), "续跑时必填")
+        row = self._path_row(settings, row, "System Prompt 覆盖", self.system_prompt_var, self._browse_system_prompt, "可选")
 
-        params = ttk.Frame(outer)
+        params = ttk.Frame(settings)
         params.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(7, 4))
-        for index in (1, 3, 5, 7):
+        for index in (1, 3):
             params.columnconfigure(index, weight=1)
         ttk.Label(params, text="Mode").grid(row=0, column=0, sticky="w")
         self.mode_combo = ttk.Combobox(params, textvariable=self.mode_var, state="readonly", width=12)
-        self.mode_combo.grid(row=0, column=1, sticky="ew", padx=(5, 14))
+        self.mode_combo.grid(row=0, column=1, sticky="ew", padx=(5, 14), pady=2)
         ttk.Label(params, text="Repeats").grid(row=0, column=2, sticky="w")
-        ttk.Entry(params, textvariable=self.repeats_var, width=8).grid(row=0, column=3, sticky="ew", padx=(5, 14))
-        ttk.Label(params, text="Max tokens").grid(row=0, column=4, sticky="w")
-        ttk.Entry(params, textvariable=self.max_tokens_var, width=10).grid(row=0, column=5, sticky="ew", padx=(5, 14))
-        ttk.Label(params, text="Seed base").grid(row=0, column=6, sticky="w")
-        ttk.Entry(params, textvariable=self.seed_base_var, width=12).grid(row=0, column=7, sticky="ew", padx=(5, 0))
+        ttk.Entry(params, textvariable=self.repeats_var, width=8).grid(row=0, column=3, sticky="ew", padx=(5, 0), pady=2)
+        ttk.Label(params, text="Max tokens").grid(row=1, column=0, sticky="w")
+        ttk.Entry(params, textvariable=self.max_tokens_var, width=10).grid(row=1, column=1, sticky="ew", padx=(5, 14), pady=2)
+        ttk.Label(params, text="Seed base").grid(row=1, column=2, sticky="w")
+        ttk.Entry(params, textvariable=self.seed_base_var, width=12).grid(row=1, column=3, sticky="ew", padx=(5, 0), pady=2)
+        ttk.Label(params, text="运行策略").grid(row=2, column=0, sticky="w")
+        self.run_strategy_combo = ttk.Combobox(
+            params,
+            textvariable=self.run_strategy_var,
+            values=list(RUN_STRATEGY_LABELS.values()),
+            state="readonly",
+        )
+        self.run_strategy_combo.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(5, 0), pady=2)
         row += 1
 
-        ttk.Label(outer, text="Base URL").grid(row=row, column=0, sticky="w", pady=3)
-        ttk.Entry(outer, textvariable=self.base_url_var).grid(row=row, column=1, sticky="ew", padx=8, pady=3)
-        ttk.Button(outer, text="刷新模型", command=self.refresh_models).grid(row=row, column=2, sticky="ew", pady=3)
-        row += 1
-
-        input_header = ttk.Frame(outer)
-        input_header.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(7, 3))
+        inputs = ttk.LabelFrame(left, text="输入内容", padding=8)
+        inputs.grid(row=1, column=0, sticky="nsew")
+        inputs.columnconfigure(0, weight=1)
+        inputs.rowconfigure(3, weight=1)
+        input_header = ttk.Frame(inputs)
+        input_header.grid(row=0, column=0, sticky="ew", pady=(0, 3))
         input_header.columnconfigure(0, weight=1)
         ttk.Label(input_header, text="输入文件（每行一个）").grid(row=0, column=0, sticky="w")
         ttk.Button(input_header, text="添加文件…", command=self._add_input_files).grid(row=0, column=1, padx=(4, 4))
         ttk.Button(input_header, text="清空", command=lambda: self.input_files.delete("1.0", "end")).grid(row=0, column=2)
-        row += 1
-        self.input_files = scrolledtext.ScrolledText(outer, height=3, wrap="none", font=("Consolas", 9))
-        self.input_files.grid(row=row, column=0, columnspan=3, sticky="ew")
-        row += 1
+        self.input_files = scrolledtext.ScrolledText(inputs, height=4, wrap="none", font=("Consolas", 9))
+        self.input_files.grid(row=1, column=0, sticky="ew")
 
-        direct_header = ttk.Frame(outer)
-        direct_header.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(7, 3))
+        direct_header = ttk.Frame(inputs)
+        direct_header.grid(row=2, column=0, sticky="ew", pady=(8, 3))
         direct_header.columnconfigure(0, weight=1)
         ttk.Label(direct_header, text="直接输入（可作为批次中的另一条 prompt）").grid(row=0, column=0, sticky="w")
         ttk.Checkbutton(direct_header, text="记住正文", variable=self.remember_direct_var).grid(row=0, column=1, sticky="e")
-        row += 1
-        self.direct_input = scrolledtext.ScrolledText(outer, height=7, wrap="word", undo=True)
-        self.direct_input.grid(row=row, column=0, columnspan=3, sticky="nsew")
-        outer.rowconfigure(row, weight=1)
-        row += 1
+        self.direct_input = scrolledtext.ScrolledText(inputs, height=12, wrap="word", undo=True)
+        self.direct_input.grid(row=3, column=0, sticky="nsew")
 
-        model_header = ttk.Frame(outer)
-        model_header.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(7, 3))
+        backend = ttk.LabelFrame(right, text="后端", padding=8)
+        backend.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        backend.columnconfigure(1, weight=1)
+        ttk.Label(backend, text="Base URL").grid(row=0, column=0, sticky="w")
+        ttk.Entry(backend, textvariable=self.base_url_var).grid(row=0, column=1, sticky="ew", padx=8)
+        ttk.Button(backend, text="刷新模型", command=self.refresh_models).grid(row=0, column=2, sticky="ew")
+
+        models_area = ttk.LabelFrame(right, text="模型选择", padding=6)
+        models_area.grid(row=1, column=0, sticky="nsew", pady=(0, 8))
+        models_area.columnconfigure(0, weight=1)
+        models_area.rowconfigure(1, weight=1)
+        model_header = ttk.Frame(models_area)
+        model_header.grid(row=0, column=0, sticky="ew", pady=(0, 4))
         model_header.columnconfigure(1, weight=1)
         ttk.Label(model_header, textvariable=self.model_source_var).grid(row=0, column=0, sticky="w")
         ttk.Entry(model_header, textvariable=self.filter_var).grid(row=0, column=1, sticky="ew", padx=8)
         ttk.Button(model_header, text="全选", command=lambda: self._set_visible_models(True)).grid(row=0, column=2, padx=(0, 4))
         ttk.Button(model_header, text="清空", command=lambda: self._set_visible_models(False)).grid(row=0, column=3)
-        row += 1
 
-        model_box = ttk.Frame(outer, relief="sunken", borderwidth=1)
-        model_box.grid(row=row, column=0, columnspan=3, sticky="nsew")
-        outer.rowconfigure(row, weight=2)
+        model_box = ttk.Frame(models_area, relief="sunken", borderwidth=1)
+        model_box.grid(row=1, column=0, sticky="nsew")
         model_box.rowconfigure(0, weight=1)
         model_box.columnconfigure(0, weight=1)
         self.model_canvas = tk.Canvas(model_box, highlightthickness=0)
@@ -197,10 +234,13 @@ class BatchApp:
         self.model_canvas.bind("<Configure>", lambda event: self.model_canvas.itemconfigure(self.model_window, width=event.width))
         self._bind_model_wheel(self.model_canvas)
         self._bind_model_wheel(self.model_inner)
-        row += 1
 
-        actions = ttk.Frame(outer)
-        actions.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(7, 4))
+        run_area = ttk.LabelFrame(right, text="运行状态", padding=8)
+        run_area.grid(row=2, column=0, sticky="nsew")
+        run_area.columnconfigure(0, weight=1)
+        run_area.rowconfigure(3, weight=1)
+        actions = ttk.Frame(run_area)
+        actions.grid(row=0, column=0, sticky="ew")
         actions.columnconfigure(3, weight=1)
         self.start_button = ttk.Button(actions, text="开始生成", command=lambda: self.start_run(False))
         self.start_button.grid(row=0, column=0, padx=(0, 5))
@@ -209,11 +249,11 @@ class BatchApp:
         self.cancel_button = ttk.Button(actions, text="取消", command=self.cancel_run, state="disabled")
         self.cancel_button.grid(row=0, column=2)
         ttk.Label(actions, textvariable=self.status_var).grid(row=0, column=3, sticky="e")
-        row += 1
-
-        self.log = scrolledtext.ScrolledText(outer, height=8, wrap="word", state="disabled", font=("Consolas", 9))
-        self.log.grid(row=row, column=0, columnspan=3, sticky="nsew")
-        outer.rowconfigure(row, weight=1)
+        self.progress = ttk.Progressbar(run_area, mode="determinate", maximum=1, value=0)
+        self.progress.grid(row=1, column=0, sticky="ew", pady=(8, 2))
+        ttk.Label(run_area, textvariable=self.progress_detail_var).grid(row=2, column=0, sticky="w", pady=(0, 4))
+        self.log = scrolledtext.ScrolledText(run_area, height=9, wrap="word", state="disabled", font=("Consolas", 9))
+        self.log.grid(row=3, column=0, sticky="nsew")
 
     def _profile_display(self, profile_id: str) -> str:
         payload = self.profiles.get(profile_id, next(iter(self.profiles.values())))[1]
@@ -275,6 +315,14 @@ class BatchApp:
         self.input_files.insert("1.0", "\n".join(self.state.get("input_files", [])))
         if self.remember_direct_var.get():
             self.direct_input.insert("1.0", self.state.get("direct_input", ""))
+
+    def _restore_pane_sash(self) -> None:
+        try:
+            position = int(self.state.get("pane_sash", 0))
+            if position > 0:
+                self.main_paned.sashpos(0, position)
+        except (tk.TclError, TypeError, ValueError):
+            pass
 
     def refresh_models(self) -> None:
         self.model_source_var.set("模型：加载中…")
@@ -531,7 +579,7 @@ class BatchApp:
                    "--app-config", str(self.config_path), "--profile", str(profile_path),
                    "--input-manifest", str(self.temp_manifest), "--mode", self.mode_var.get(),
                    "--base-url", self.base_url_var.get().strip(), "--repeats", str(repeats), "--max-tokens", str(max_tokens),
-                   "--seed-base", str(seed_base)]
+                   "--seed-base", str(seed_base), "--event-format", "jsonl"]
         for model_id in selected:
             command.extend(("--model", model_id))
         for flag, value in (("--output-root", self.output_root_var.get().strip()), ("--run-directory", self.run_directory_var.get().strip()),
@@ -540,6 +588,14 @@ class BatchApp:
                 command.extend((flag, value))
         if validate_only:
             command.append("--validate-only")
+        else:
+            strategy = RUN_STRATEGY_KEYS.get(self.run_strategy_var.get(), "new")
+            if strategy != "new" and not self.run_directory_var.get().strip():
+                raise ValueError("续跑或仅重试失败时必须指定固定运行目录")
+            if strategy == "resume":
+                command.append("--resume")
+            elif strategy == "retry-failed":
+                command.append("--retry-failed")
         return command
 
     def start_run(self, validate_only: bool) -> None:
@@ -554,6 +610,8 @@ class BatchApp:
             return
         self._append_log("\n> " + ("开始验证。\n" if validate_only else "开始生成；顺序为 model → repeat → input。\n"))
         self.status_var.set("运行中")
+        self.progress.configure(maximum=1, value=0)
+        self.progress_detail_var.set("正在准备批次")
         self.start_button.configure(state="disabled")
         self.validate_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
@@ -565,7 +623,15 @@ class BatchApp:
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                 assert self.process.stdout is not None
                 for line in self.process.stdout:
-                    self.events.put(("log", line))
+                    try:
+                        payload = json.loads(line)
+                    except json.JSONDecodeError:
+                        self.events.put(("log", line))
+                    else:
+                        if isinstance(payload, dict) and payload.get("type"):
+                            self.events.put(("engine", payload))
+                        else:
+                            self.events.put(("log", line))
                 self.events.put(("finished", self.process.wait()))
             except Exception as exc:
                 self.events.put(("error", f"启动失败：{exc}"))
@@ -576,6 +642,7 @@ class BatchApp:
         if self.process is not None and self.process.poll() is None:
             self._terminate_tree()
             self.status_var.set("正在取消")
+            self.progress_detail_var.set("正在终止当前进程；已完成结果会保留")
 
     def _terminate_tree(self) -> None:
         if self.process is None or self.process.poll() is not None:
@@ -590,10 +657,16 @@ class BatchApp:
 
     def _save_state(self) -> None:
         direct = self.direct_input.get("1.0", "end-1c") if self.remember_direct_var.get() else ""
+        try:
+            pane_sash = self.main_paned.sashpos(0)
+        except tk.TclError:
+            pane_sash = 0
         state = {"schema_version": 1, "geometry": self.root.geometry(), "profile": self.profile_var.get(), "mode": self.mode_var.get(),
+                 "pane_sash": pane_sash,
                  "output_root": self.output_root_var.get().strip(), "run_directory": self.run_directory_var.get().strip(),
                  "system_prompt": self.system_prompt_var.get().strip(), "repeats": self._positive_int(self.repeats_var.get(), "Repeats"),
                  "max_tokens": self._positive_int(self.max_tokens_var.get(), "Max tokens"), "seed_base": self._positive_int(self.seed_base_var.get(), "Seed base"),
+                 "run_strategy": RUN_STRATEGY_KEYS.get(self.run_strategy_var.get(), "new"),
                  "base_url": self.base_url_var.get().strip(), "input_files": [line.strip() for line in self.input_files.get("1.0", "end-1c").splitlines() if line.strip()],
                  "selected_models": [mid for mid, var in self.model_vars.items() if var.get()], "model_filter": self.filter_var.get(),
                  "collapsed_model_groups": sorted(self.collapsed_model_groups),
@@ -615,6 +688,46 @@ class BatchApp:
         self.log.see("end")
         self.log.configure(state="disabled")
 
+    def _handle_engine_event(self, payload: dict) -> None:
+        event_type = str(payload.get("type", ""))
+        if event_type == "log":
+            self._append_log(str(payload.get("message", "")) + "\n")
+        elif event_type == "batch_started":
+            total = max(1, int(payload.get("total", 1)))
+            planned = int(payload.get("planned", total))
+            self.progress.configure(maximum=total, value=0)
+            self.progress_detail_var.set(f"共 {total} 项，本次需要请求 {planned} 项")
+        elif event_type == "model_started":
+            self.status_var.set(f"模型 {payload.get('index')}/{payload.get('total_models')}")
+        elif event_type == "item_started":
+            self.progress_detail_var.set(
+                f"正在生成：{payload.get('model')} / {payload.get('input')} / 第 {payload.get('repeat')} 次"
+            )
+        elif event_type == "item_finished":
+            completed = int(payload.get("completed", 0))
+            total = max(1, int(payload.get("total", 1)))
+            self.progress.configure(maximum=total, value=completed)
+            status_labels = {"success": "完成", "failed": "失败", "skipped": "已跳过"}
+            status = status_labels.get(str(payload.get("status")), str(payload.get("status", "")))
+            self.progress_detail_var.set(
+                f"{completed}/{total} · {status} · {payload.get('model')} / {payload.get('input')} / 第 {payload.get('repeat')} 次"
+            )
+        elif event_type == "batch_finished":
+            total = max(1, int(payload.get("total", 1)))
+            self.progress.configure(maximum=total, value=int(payload.get("completed", total)))
+            self.progress_detail_var.set(
+                f"批次结束：执行 {payload.get('executed', 0)}，跳过 {payload.get('skipped', 0)}，失败 {payload.get('failures', 0)}"
+            )
+        elif event_type == "validation_finished":
+            self.progress.configure(maximum=1, value=1)
+            self.progress_detail_var.set(
+                f"验证通过：{payload.get('models', 0)} 个模型，{payload.get('inputs', 0)} 条输入"
+            )
+        elif event_type in {"batch_failed", "error"}:
+            message = str(payload.get("error") or payload.get("message") or "未知错误")
+            self.progress_detail_var.set(f"失败：{message}")
+            self._append_log(f"\n! {message}\n")
+
     def _drain_events(self) -> None:
         try:
             while True:
@@ -623,6 +736,8 @@ class BatchApp:
                     self._apply_models(*value)
                 elif event == "log":
                     self._append_log(str(value))
+                elif event == "engine":
+                    self._handle_engine_event(value)
                 elif event == "error":
                     self._append_log(f"\n! {value}\n")
                 elif event == "finished":

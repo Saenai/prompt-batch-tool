@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -22,6 +23,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed-base", required=True, type=int)
     parser.add_argument("--model", dest="models", action="append", required=True)
     parser.add_argument("--validate-only", action="store_true")
+    strategy = parser.add_mutually_exclusive_group()
+    strategy.add_argument("--resume", action="store_true", help="Skip successful items and run failed or missing items")
+    strategy.add_argument("--retry-failed", action="store_true", help="Retry only items recorded as failed")
+    parser.add_argument("--event-format", choices=("text", "jsonl"), default="text")
     return parser
 
 
@@ -40,18 +45,40 @@ def main() -> int:
         base_url=args.base_url,
         output_root=args.output_root,
         run_directory=args.run_directory,
+        resume=args.resume,
+        retry_failed_only=args.retry_failed,
     )
+    jsonl = args.event_format == "jsonl"
+
+    def emit(payload: dict) -> None:
+        print(json.dumps(payload, ensure_ascii=True, separators=(",", ":")), flush=True)
+
+    def log(message: str) -> None:
+        if jsonl:
+            emit({"type": "log", "message": message})
+        else:
+            print(message, flush=True)
+
     try:
         if args.validate_only:
             report = validate_batch(options)
-            print(f"Validation OK: profile={report.profile_id}, inputs={len(report.cases)}, models={report.model_count}.")
-            for case in report.cases:
-                print(f"  {case.case_id}: mode={case.mode}, source={case.source_kind}, system={case.system_prompt_source}")
+            if jsonl:
+                emit({"type": "validation_finished", "profile": report.profile_id,
+                      "inputs": len(report.cases), "models": report.model_count,
+                      "cases": [{"id": case.case_id, "mode": case.mode, "source": case.source_kind,
+                                 "system": case.system_prompt_source} for case in report.cases]})
+            else:
+                print(f"Validation OK: profile={report.profile_id}, inputs={len(report.cases)}, models={report.model_count}.")
+                for case in report.cases:
+                    print(f"  {case.case_id}: mode={case.mode}, source={case.source_kind}, system={case.system_prompt_source}")
         else:
-            run_batch(options)
+            run_batch(options, log=log, event=emit if jsonl else None)
         return 0
     except Exception as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        if jsonl:
+            emit({"type": "error", "message": str(exc)})
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
 

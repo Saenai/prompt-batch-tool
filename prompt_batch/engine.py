@@ -20,6 +20,7 @@ from .model_source import fetch_model_ids
 
 
 LogFunction = Callable[[str], None]
+EventFunction = Callable[[dict[str, Any]], None]
 
 
 @dataclass(slots=True)
@@ -36,6 +37,8 @@ class BatchOptions:
     base_url: str | None = None
     output_root: Path | None = None
     run_directory: Path | None = None
+    resume: bool = False
+    retry_failed_only: bool = False
 
 
 @dataclass(slots=True)
@@ -109,6 +112,8 @@ def _prepare_batch(options: BatchOptions) -> PreparedBatch:
             raise FileNotFoundError(f"Required file not found: {path}")
     if options.repeats < 1 or options.max_tokens < 1:
         raise ValueError("Repeats and max tokens must be positive integers.")
+    if (options.resume or options.retry_failed_only) and not options.run_directory:
+        raise ValueError("Resume and retry-failed modes require an explicit run directory.")
     options.model_ids = _unique_strings(options.model_ids)
     if not options.model_ids:
         raise ValueError("At least one model must be selected.")
@@ -330,7 +335,9 @@ def _valid_output(content: str, profile: dict[str, Any], mode_config: dict[str, 
 
 
 def _write_json(path: Path, payload: Any) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporary, path)
 
 
 def _write_csv(path: Path, rows: list[dict[str, Any]], fields: list[str]) -> None:
@@ -349,7 +356,73 @@ def _format_average(value: float | None, digits: int) -> str:
     return "-" if value is None else f"{value:.{digits}f}"
 
 
-def run_batch(options: BatchOptions, log: LogFunction = print) -> Path:
+def _emit(event: EventFunction | None, event_type: str, **payload: Any) -> None:
+    if event is not None:
+        event({"type": event_type, **payload})
+
+
+def _resume_identity(prepared: PreparedBatch) -> dict[str, Any]:
+    options = prepared.options
+    return {
+        "profile_id": str(prepared.profile["id"]),
+        "profile_sha256": _sha256_text(json.dumps(prepared.profile, ensure_ascii=False, sort_keys=True)),
+        "endpoint": prepared.base_url,
+        "backend_request_body": prepared.app_config.get("backend", {}).get("request_body", {}),
+        "inputs": [
+            {
+                "id": case.case_id,
+                "mode": case.mode,
+                "input_sha256": case.input_sha256,
+                "system_prompt_sha256": case.system_prompt_sha256,
+            }
+            for case in prepared.cases
+        ],
+        "models": options.model_ids,
+        "repeats_per_input": options.repeats,
+        "max_tokens": options.max_tokens,
+        "seed_base": options.seed_base,
+    }
+
+
+def _validate_resume_manifest(existing: dict[str, Any], prepared: PreparedBatch) -> None:
+    expected = _resume_identity(prepared)
+    existing_inputs = [
+        {
+            "id": item.get("id"),
+            "mode": item.get("mode"),
+            "input_sha256": item.get("input_sha256"),
+            "system_prompt_sha256": item.get("system_prompt_sha256"),
+        }
+        for item in existing.get("inputs", [])
+        if isinstance(item, dict)
+    ]
+    actual = {
+        "profile_id": existing.get("profile_id"),
+        "profile_sha256": existing.get("profile_sha256"),
+        "endpoint": existing.get("endpoint"),
+        "backend_request_body": existing.get("backend_request_body", {}),
+        "inputs": existing_inputs,
+        "models": existing.get("models"),
+        "repeats_per_input": existing.get("repeats_per_input"),
+        "max_tokens": existing.get("max_tokens"),
+        "seed_base": existing.get("seed_base"),
+    }
+    mismatches = [key for key, value in expected.items() if actual.get(key) != value]
+    if mismatches:
+        raise ValueError(f"Run directory is incompatible with the requested batch: {', '.join(mismatches)}")
+
+
+def _load_job_record(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        payload = load_json(path)
+        return payload if isinstance(payload, dict) else None
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunction | None = None) -> Path:
     prepared = _prepare_batch(options)
     app = prepared.app_config
     profile = prepared.profile
@@ -361,6 +434,16 @@ def run_batch(options: BatchOptions, log: LogFunction = print) -> Path:
     else:
         run_id = f"{datetime.now():%Y%m%d-%H%M%S}-{prefix}-{len(prepared.cases)}inputs"
         run_dir = prepared.output_root / run_id
+    manifest_path = run_dir / "manifest.json"
+    resume_requested = options.resume or options.retry_failed_only
+    existing_manifest: dict[str, Any] | None = None
+    if resume_requested:
+        if not run_dir.is_dir() or not manifest_path.is_file():
+            raise ValueError(f"Resume requires an existing run directory with manifest.json: {run_dir}")
+        existing_manifest = load_json(manifest_path)
+        _validate_resume_manifest(existing_manifest, prepared)
+    elif run_dir.exists() and any(run_dir.iterdir()):
+        raise ValueError(f"Run directory is not empty; choose resume or another directory: {run_dir}")
     input_dir = run_dir / "input"
     system_dir = input_dir / "system-prompts"
     result_dir = run_dir / "results"
@@ -383,11 +466,83 @@ def run_batch(options: BatchOptions, log: LogFunction = print) -> Path:
     router_process: subprocess.Popen[Any] | None = None
     records: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    total_requested = len(options.model_ids) * options.repeats * len(prepared.cases)
+    existing_records: dict[tuple[str, str, int], dict[str, Any]] = {}
+    for model_id in options.model_ids:
+        for repeat in range(1, options.repeats + 1):
+            stem = f"run-{repeat:02d}"
+            for case in prepared.cases:
+                record = _load_job_record(raw_dir / model_id / case.case_id / f"{stem}.record.json")
+                if record is not None:
+                    existing_records[(model_id, case.case_id, repeat)] = record
+    if options.retry_failed_only and len(existing_records) != total_requested:
+        raise ValueError("Retry-failed mode requires a complete set of per-item records; use normal resume for older or interrupted runs.")
+
+    def should_run(model_id: str, case_id: str, repeat: int) -> bool:
+        if not resume_requested:
+            return True
+        previous = existing_records.get((model_id, case_id, repeat))
+        if previous is None:
+            return not options.retry_failed_only
+        return not bool(previous.get("success"))
+
+    planned_requests = sum(
+        should_run(model_id, case.case_id, repeat)
+        for model_id in options.model_ids
+        for repeat in range(1, options.repeats + 1)
+        for case in prepared.cases
+    )
+    completed_items = 0
+    executed_items = 0
+    skipped_items = 0
+    manifest: dict[str, Any] = {
+        "run_id": run_id,
+        "created_at": (existing_manifest or {}).get("created_at", datetime.now().astimezone().isoformat()),
+        "updated_at": datetime.now().astimezone().isoformat(),
+        "status": "running",
+        "profile_id": str(profile["id"]),
+        "profile_sha256": _sha256_text(json.dumps(profile, ensure_ascii=False, sort_keys=True)),
+        "profile_path": str(options.profile_path),
+        "app_config_path": str(options.app_config_path),
+        "endpoint": prepared.base_url,
+        "backend_request_body": app.get("backend", {}).get("request_body", {}),
+        "inputs": [
+            {
+                "id": case.case_id,
+                "mode": case.mode,
+                "source_kind": case.source_kind,
+                "source_path": str(case.source_path) if case.source_path else None,
+                "input_sha256": case.input_sha256,
+                "system_prompt_path": str(case.system_prompt_path) if case.system_prompt_path else None,
+                "system_prompt_source": case.system_prompt_source,
+                "system_prompt_sha256": case.system_prompt_sha256,
+            }
+            for case in prepared.cases
+        ],
+        "models": options.model_ids,
+        "repeats_per_input": options.repeats,
+        "input_count": len(prepared.cases),
+        "outputs_per_model": options.repeats * len(prepared.cases),
+        "total_requested": total_requested,
+        "planned_requests_this_run": planned_requests,
+        "run_strategy": "retry-failed" if options.retry_failed_only else "resume" if options.resume else "new",
+        "resume_count": int((existing_manifest or {}).get("resume_count", 0)) + (1 if resume_requested else 0),
+        "max_tokens": options.max_tokens,
+        "seed_base": options.seed_base,
+        "request_order": "model -> repeat -> input",
+        "router_started_by_script": False,
+        "runtime_version": _runtime_version(prepared),
+    }
+    _write_json(manifest_path, manifest)
+    _emit(event, "batch_started", run_directory=str(run_dir), total=total_requested, planned=planned_requests,
+          strategy=manifest["run_strategy"])
     try:
-        if not _endpoint_ready(models_uri):
+        if planned_requests and not _endpoint_ready(models_uri):
             if not may_start_router:
                 raise RuntimeError(f"Endpoint is unavailable and does not match the configured local router URL: {models_uri}")
             router_process = _start_router(prepared, log_dir)
+            manifest["router_started_by_script"] = True
+            _write_json(manifest_path, manifest)
             timeout = int(app["backend"].get("readiness_timeout_seconds", 60))
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
@@ -399,47 +554,16 @@ def run_batch(options: BatchOptions, log: LogFunction = print) -> Path:
             else:
                 raise RuntimeError(f"Router did not become ready: {models_uri}")
 
-        available = {str(item["id"]) for item in _http_json_get(models_uri, 10).get("data", []) if item.get("id")}
-        missing_models = [model_id for model_id in options.model_ids if model_id not in available]
-        if missing_models:
-            raise RuntimeError(f"Models are not visible: {', '.join(missing_models)}")
-
-        manifest = {
-            "run_id": run_id,
-            "created_at": datetime.now().astimezone().isoformat(),
-            "profile_id": str(profile["id"]),
-            "profile_path": str(options.profile_path),
-            "app_config_path": str(options.app_config_path),
-            "endpoint": prepared.base_url,
-            "inputs": [
-                {
-                    "id": case.case_id,
-                    "mode": case.mode,
-                    "source_kind": case.source_kind,
-                    "source_path": str(case.source_path) if case.source_path else None,
-                    "input_sha256": case.input_sha256,
-                    "system_prompt_path": str(case.system_prompt_path) if case.system_prompt_path else None,
-                    "system_prompt_source": case.system_prompt_source,
-                    "system_prompt_sha256": case.system_prompt_sha256,
-                }
-                for case in prepared.cases
-            ],
-            "models": options.model_ids,
-            "repeats_per_input": options.repeats,
-            "input_count": len(prepared.cases),
-            "outputs_per_model": options.repeats * len(prepared.cases),
-            "total_requested": len(options.model_ids) * options.repeats * len(prepared.cases),
-            "max_tokens": options.max_tokens,
-            "seed_base": options.seed_base,
-            "request_order": "model -> repeat -> input",
-            "router_started_by_script": router_process is not None,
-            "runtime_version": _runtime_version(prepared),
-        }
-        _write_json(run_dir / "manifest.json", manifest)
+        if planned_requests:
+            available = {str(item["id"]) for item in _http_json_get(models_uri, 10).get("data", []) if item.get("id")}
+            missing_models = [model_id for model_id in options.model_ids if model_id not in available]
+            if missing_models:
+                raise RuntimeError(f"Models are not visible: {', '.join(missing_models)}")
 
         request_timeout = int(app["backend"].get("request_timeout_seconds", 3600))
         for model_index, model_id in enumerate(options.model_ids, start=1):
             log(f"[{model_index}/{len(options.model_ids)}] {model_id}")
+            _emit(event, "model_started", model=model_id, index=model_index, total_models=len(options.model_ids))
             for repeat in range(1, options.repeats + 1):
                 seed = options.seed_base + repeat
                 for case in prepared.cases:
@@ -449,6 +573,28 @@ def run_batch(options: BatchOptions, log: LogFunction = print) -> Path:
                     for directory in (case_result, case_final, case_raw):
                         directory.mkdir(parents=True, exist_ok=True)
                     stem = f"run-{repeat:02d}"
+                    record_path = case_raw / f"{stem}.record.json"
+                    previous = existing_records.get((model_id, case.case_id, repeat))
+                    if not should_run(model_id, case.case_id, repeat):
+                        if previous is not None:
+                            records.append(previous)
+                            if not previous.get("success"):
+                                failures.append({"model": model_id, "input": case.case_id, "repeat": repeat,
+                                                 "error": str(previous.get("error") or "previous request error")})
+                        completed_items += 1
+                        skipped_items += 1
+                        log(f"  {case.case_id} {stem} skipped")
+                        _emit(event, "item_finished", model=model_id, input=case.case_id, repeat=repeat,
+                              status="skipped", completed=completed_items, total=total_requested)
+                        continue
+                    for stale_path in (
+                        case_result / f"{stem}.md",
+                        case_result / f"{stem}.reasoning.txt",
+                        case_final / f"{stem}.md",
+                        case_raw / f"{stem}.json",
+                        case_raw / f"{stem}.error.txt",
+                    ):
+                        stale_path.unlink(missing_ok=True)
                     messages: list[dict[str, str]] = []
                     if case.system_prompt:
                         messages.append({"role": "system", "content": case.system_prompt})
@@ -458,6 +604,8 @@ def run_batch(options: BatchOptions, log: LogFunction = print) -> Path:
                         if isinstance(source, dict):
                             body.update(source)
                     body.update({"model": model_id, "messages": messages, "max_tokens": options.max_tokens, "seed": seed, "stream": False})
+                    _emit(event, "item_started", model=model_id, input=case.case_id, repeat=repeat,
+                          completed=completed_items, total=total_requested)
                     started = time.perf_counter()
                     try:
                         raw_response, response = _http_json_post(chat_uri, body, request_timeout)
@@ -496,20 +644,34 @@ def run_batch(options: BatchOptions, log: LogFunction = print) -> Path:
                             "output_characters": len(content),
                         }
                         records.append(record)
+                        _write_json(record_path, record)
+                        (case_raw / f"{stem}.error.txt").unlink(missing_ok=True)
+                        completed_items += 1
+                        executed_items += 1
                         log(f"  {case.case_id} {stem} seed={seed}")
+                        _emit(event, "item_finished", model=model_id, input=case.case_id, repeat=repeat,
+                              status="success", completed=completed_items, total=total_requested,
+                              elapsed_seconds=record["api_elapsed_seconds"])
                     except Exception as exc:
                         elapsed = time.perf_counter() - started
                         (case_raw / f"{stem}.error.txt").write_text(repr(exc), encoding="utf-8")
                         failures.append({"model": model_id, "input": case.case_id, "repeat": repeat, "error": str(exc)})
-                        records.append({
+                        record = {
                             "model": model_id, "input": case.case_id, "mode": case.mode, "repeat": repeat, "seed": seed,
                             "success": False, "valid_output": False, "observation_count": len(case.observations),
                             "observations_preserved": False, "missing_observations": "request_error", "markers_retained": False,
                             "retained_markers": "", "finish_reason": "request_error", "api_elapsed_seconds": round(elapsed, 3),
                             "generation_seconds": None, "generation_tokens_per_second": None, "prompt_tokens": None,
-                            "completion_tokens": None, "output_characters": None,
-                        })
+                            "completion_tokens": None, "output_characters": None, "error": str(exc),
+                        }
+                        records.append(record)
+                        _write_json(record_path, record)
+                        completed_items += 1
+                        executed_items += 1
                         log(f"WARNING: {model_id}/{case.case_id}/{stem} failed: {exc}")
+                        _emit(event, "item_finished", model=model_id, input=case.case_id, repeat=repeat,
+                              status="failed", completed=completed_items, total=total_requested,
+                              elapsed_seconds=record["api_elapsed_seconds"], error=str(exc))
 
         records_file = str(output_config.get("records_file", "BATCH-RECORDS.csv"))
         observations_file = str(output_config.get("observations_file", "OBSERVATIONS.csv"))
@@ -567,8 +729,22 @@ def run_batch(options: BatchOptions, log: LogFunction = print) -> Path:
             )
         (run_dir / summary_file).write_text("\n".join(summary), encoding="utf-8")
         manifest["failures"] = failures
+        manifest["status"] = "completed_with_failures" if failures else "completed"
+        manifest["completed_at"] = datetime.now().astimezone().isoformat()
+        manifest["executed_items_this_run"] = executed_items
+        manifest["skipped_items_this_run"] = skipped_items
         manifest["output_files"] = {"all": all_file, "raw": raw_file, "records": records_file, "observations": observations_file, "summary": summary_file}
-        _write_json(run_dir / "manifest.json", manifest)
+        _write_json(manifest_path, manifest)
+        _emit(event, "batch_finished", run_directory=str(run_dir), total=total_requested, completed=completed_items,
+              executed=executed_items, skipped=skipped_items, failures=len(failures), status=manifest["status"])
+    except Exception as exc:
+        manifest["status"] = "interrupted"
+        manifest["updated_at"] = datetime.now().astimezone().isoformat()
+        manifest["error"] = str(exc)
+        _write_json(manifest_path, manifest)
+        _emit(event, "batch_failed", run_directory=str(run_dir), error=str(exc), completed=completed_items,
+              total=total_requested)
+        raise
     finally:
         if router_process is not None:
             _terminate_process_tree(router_process)

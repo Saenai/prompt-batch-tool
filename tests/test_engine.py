@@ -167,6 +167,76 @@ class EngineTests(unittest.TestCase):
         manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["request_order"], "model -> repeat -> input")
         self.assertEqual(manifest["failures"], [])
+        self.assertEqual(manifest["status"], "completed")
+        self.assertEqual(len(list((run_dir / "raw").rglob("*.record.json"))), 8)
+
+    def test_resume_skips_successful_items(self) -> None:
+        run_batch(self.options(), log=lambda _message: None)
+        events: list[dict] = []
+        options = self.options()
+        options.resume = True
+        run_batch(options, log=lambda _message: None, event=events.append)
+
+        self.assertEqual(len(MockApiHandler.requests), 8)
+        skipped = [event for event in events if event["type"] == "item_finished"]
+        self.assertEqual(len(skipped), 8)
+        self.assertTrue(all(event["status"] == "skipped" for event in skipped))
+        finished = next(event for event in events if event["type"] == "batch_finished")
+        self.assertEqual((finished["executed"], finished["skipped"]), (0, 8))
+
+    def test_resume_runs_only_missing_items(self) -> None:
+        run_dir = run_batch(self.options(), log=lambda _message: None)
+        (run_dir / "raw" / "model-a" / "one" / "run-01.record.json").unlink()
+        options = self.options()
+        options.resume = True
+        run_batch(options, log=lambda _message: None)
+
+        self.assertEqual(len(MockApiHandler.requests), 9)
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["planned_requests_this_run"], 1)
+        self.assertEqual(manifest["executed_items_this_run"], 1)
+        self.assertEqual(manifest["skipped_items_this_run"], 7)
+
+    def test_retry_failed_runs_only_recorded_failures(self) -> None:
+        run_dir = run_batch(self.options(), log=lambda _message: None)
+        record_path = run_dir / "raw" / "model-b" / "two" / "run-02.record.json"
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        record.update({"success": False, "valid_output": False, "error": "simulated failure"})
+        record_path.write_text(json.dumps(record), encoding="utf-8")
+        options = self.options()
+        options.retry_failed_only = True
+        run_batch(options, log=lambda _message: None)
+
+        self.assertEqual(len(MockApiHandler.requests), 9)
+        repaired = json.loads(record_path.read_text(encoding="utf-8"))
+        self.assertTrue(repaired["success"])
+
+    def test_resume_rejects_changed_batch_identity(self) -> None:
+        run_batch(self.options(), log=lambda _message: None)
+        options = self.options()
+        options.resume = True
+        options.max_tokens = 101
+        with self.assertRaisesRegex(ValueError, "max_tokens"):
+            run_batch(options, log=lambda _message: None)
+
+    def test_retry_failed_rejects_missing_records(self) -> None:
+        run_dir = run_batch(self.options(), log=lambda _message: None)
+        (run_dir / "raw" / "model-a" / "one" / "run-01.record.json").unlink()
+        options = self.options()
+        options.retry_failed_only = True
+        with self.assertRaisesRegex(ValueError, "complete set"):
+            run_batch(options, log=lambda _message: None)
+
+    def test_endpoint_failure_leaves_resumable_manifest(self) -> None:
+        options = self.options()
+        options.base_url = "http://127.0.0.1:1/v1"
+        with self.assertRaisesRegex(RuntimeError, "Endpoint is unavailable"):
+            run_batch(options, log=lambda _message: None)
+
+        manifest_path = options.run_directory / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["status"], "interrupted")
+        self.assertEqual(manifest["planned_requests_this_run"], 8)
 
 
 if __name__ == "__main__":

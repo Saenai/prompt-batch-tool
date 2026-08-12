@@ -13,7 +13,9 @@ param(
     [Parameter(Mandatory = $true)] [int]$MaxTokens,
     [Parameter(Mandatory = $true)] [int]$SeedBase,
     [Parameter(Mandatory = $true)] [string]$ModelIdsCsv,
-    [switch]$ValidateOnly
+    [switch]$ValidateOnly,
+    [switch]$Resume,
+    [switch]$RetryFailed
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,6 +52,9 @@ foreach ($pair in @(
     if (-not [string]::IsNullOrWhiteSpace([string]$pair[1])) { $arguments += [string]$pair[0], [string]$pair[1] }
 }
 if ($ValidateOnly) { $arguments += '--validate-only' }
+if ($Resume -and $RetryFailed) { throw 'Resume and RetryFailed are mutually exclusive.' }
+if ($Resume) { $arguments += '--resume' }
+if ($RetryFailed) { $arguments += '--retry-failed' }
 
 & $python.Source @arguments
 exit $LASTEXITCODE
