@@ -60,7 +60,16 @@
         "ornith",
         "qwen3",
         "muse"
-      ]
+      ],
+      "parameter_tiers": {
+        "enabled": true,
+        "pattern": "(?:^|-)(\\d+(?:\\.\\d+)?[bB])(?:-a(\\d+(?:\\.\\d+)?[bB]))?(?:-|$)",
+        "size_group": 1,
+        "active_group": 2,
+        "fallback_group": "unknown",
+        "fallback_label": "参数量未标注",
+        "sort": "size-desc"
+      }
     }
   },
   "defaults": {

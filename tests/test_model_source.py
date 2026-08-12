@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from prompt_batch.model_source import group_models
+from prompt_batch.model_source import group_model_tiers, group_models
 
 
 class ModelGroupingTests(unittest.TestCase):
@@ -40,6 +40,38 @@ class ModelGroupingTests(unittest.TestCase):
     def test_invalid_pattern_has_clear_error(self) -> None:
         with self.assertRaisesRegex(ValueError, "grouping.pattern"):
             group_models([("model-a", "Model A")], {"pattern": "["})
+
+    def test_parameter_tiers_sort_by_total_size_and_show_active_size(self) -> None:
+        tiers = group_model_tiers(
+            [
+                ("gemma4-26b-a4b-q4", "Gemma MoE"),
+                ("gemma4-31b-q4", "Gemma dense"),
+                ("gemma4-custom", "Unknown"),
+            ],
+            {
+                "pattern": r"(?:^|-)(\d+(?:\.\d+)?[bB])(?:-a(\d+(?:\.\d+)?[bB]))?(?:-|$)",
+                "size_group": 1,
+                "active_group": 2,
+                "sort": "size-desc",
+            },
+        )
+        self.assertEqual([tier.key for tier in tiers], ["31b", "26b-a4b", "unknown"])
+        self.assertEqual([tier.label for tier in tiers], ["31B", "26B / A4B", "参数量未标注"])
+        self.assertEqual(tiers[1].models[0][0], "gemma4-26b-a4b-q4")
+
+    def test_parameter_tier_invalid_capture_has_clear_error(self) -> None:
+        with self.assertRaisesRegex(ValueError, "捕获组"):
+            group_model_tiers(
+                [("model-7b", "Model")],
+                {"pattern": r"(7b)", "size_group": 2},
+            )
+
+    def test_parameter_tiers_compare_units_numerically(self) -> None:
+        tiers = group_model_tiers(
+            [("model-500m", "Small"), ("model-7b", "Large")],
+            {"pattern": r"(?:^|-)(\d+(?:\.\d+)?[mMbB])(?:-|$)"},
+        )
+        self.assertEqual([tier.key for tier in tiers], ["7b", "500m"])
 
 
 if __name__ == "__main__":

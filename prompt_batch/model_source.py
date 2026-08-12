@@ -16,6 +16,13 @@ class ModelGroup:
     models: tuple[tuple[str, str], ...]
 
 
+@dataclass(frozen=True)
+class ModelTier:
+    key: str
+    label: str
+    models: tuple[tuple[str, str], ...]
+
+
 def parse_llama_swap_models(path: Path) -> dict[str, str]:
     models: dict[str, str] = {}
     if not path.is_file():
@@ -113,3 +120,74 @@ def group_models(models: list[tuple[str, str]], config: dict | None = None) -> l
         ModelGroup(key, display_labels[key], tuple(grouped[key]))
         for key in sorted(grouped, key=sort_key)
     ]
+
+
+def group_model_tiers(models: list[tuple[str, str]], config: dict | None = None) -> list[ModelTier]:
+    """Group models by configured parameter-size captures."""
+    settings = config or {}
+    if not settings.get("enabled", True):
+        label = str(settings.get("all_models_label", "全部参数量"))
+        return [ModelTier("__all_sizes__", label, tuple(models))] if models else []
+
+    pattern_text = str(settings.get("pattern", r"(?:^|-)(\d+(?:\.\d+)?[bB])(?:-|$)"))
+    try:
+        pattern = re.compile(pattern_text, re.IGNORECASE)
+    except re.error as exc:
+        raise ValueError(f"model_source.grouping.parameter_tiers.pattern 无效：{exc}") from exc
+    try:
+        size_group = int(settings.get("size_group", 1))
+        active_group = int(settings.get("active_group", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("parameter_tiers 的 size_group 和 active_group 必须是整数") from exc
+
+    aliases = {str(key).casefold(): str(value) for key, value in settings.get("aliases", {}).items()}
+    fallback_key = str(settings.get("fallback_group", "unknown")).strip().casefold() or "unknown"
+    fallback_label = str(settings.get("fallback_label", "参数量未标注"))
+    grouped: dict[str, list[tuple[str, str]]] = {}
+    display_labels: dict[str, str] = {}
+    sort_values: dict[str, float] = {}
+
+    for model_id, model_label in models:
+        match = pattern.search(model_id)
+        size = ""
+        active = ""
+        if match:
+            try:
+                size = (match.group(size_group) or "").strip()
+                if active_group > 0:
+                    active = (match.group(active_group) or "").strip()
+            except (IndexError, TypeError) as exc:
+                raise ValueError("parameter_tiers 捕获组超出 pattern 范围") from exc
+        if size:
+            key = size.casefold() + (f"-a{active.casefold()}" if active else "")
+            default_label = size.upper() + (f" / A{active.upper()}" if active else "")
+        else:
+            key = fallback_key
+            default_label = fallback_label
+        grouped.setdefault(key, []).append((model_id, model_label))
+        display_labels.setdefault(key, aliases.get(key, default_label))
+        sort_values.setdefault(key, _parameter_value(size))
+
+    sort_mode = str(settings.get("sort", "size-desc")).casefold()
+
+    def sort_key(key: str) -> tuple[int, float | str, str]:
+        if key == fallback_key:
+            return (2, 0.0, key)
+        if sort_mode == "size-asc":
+            return (0, sort_values[key], key)
+        if sort_mode == "label":
+            return (0, display_labels[key].casefold(), key)
+        return (0, -sort_values[key], key)
+
+    return [
+        ModelTier(key, display_labels[key], tuple(grouped[key]))
+        for key in sorted(grouped, key=sort_key)
+    ]
+
+
+def _parameter_value(value: str) -> float:
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)([kmgtb]?)", value.strip(), re.IGNORECASE)
+    if not match:
+        return 0.0
+    multiplier = {"": 1.0, "k": 1e3, "m": 1e6, "g": 1e9, "b": 1e9, "t": 1e12}
+    return float(match.group(1)) * multiplier[match.group(2).casefold()]

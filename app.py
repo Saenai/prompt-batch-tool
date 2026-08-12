@@ -13,7 +13,14 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from prompt_batch.config import load_json, resolve_config_paths
-from prompt_batch.model_source import ModelGroup, discover_models, group_models, parse_llama_swap_models
+from prompt_batch.model_source import (
+    ModelGroup,
+    ModelTier,
+    discover_models,
+    group_model_tiers,
+    group_models,
+    parse_llama_swap_models,
+)
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -43,9 +50,14 @@ class BatchApp:
         self.model_vars: dict[str, tk.BooleanVar] = {}
         self.model_labels: dict[str, str] = {}
         self.model_groups: list[ModelGroup] = []
+        self.model_tiers: dict[str, list[ModelTier]] = {}
         self.group_counter_vars: dict[str, tk.StringVar] = {}
+        self.tier_counter_vars: dict[str, tk.StringVar] = {}
         self.collapsed_model_groups = {
             str(value) for value in self.state.get("collapsed_model_groups", [])
+        }
+        self.collapsed_model_tiers = {
+            str(value) for value in self.state.get("collapsed_model_tiers", [])
         }
         self.pending_models = set(self.state.get("selected_models", []))
 
@@ -282,6 +294,11 @@ class BatchApp:
         self.model_vars = {mid: tk.BooleanVar(value=mid in selected) for mid, _ in models}
         grouping = self.config.get("model_source", {}).get("grouping", {})
         self.model_groups = group_models(models, grouping)
+        tiering = grouping.get("parameter_tiers", {})
+        self.model_tiers = {
+            group.key: group_model_tiers(list(group.models), tiering)
+            for group in self.model_groups
+        }
         self.model_source_var.set(f"模型：{len(models)} 个（{source}）")
         self._render_models()
 
@@ -293,6 +310,7 @@ class BatchApp:
         for child in self.model_inner.winfo_children():
             child.destroy()
         self.group_counter_vars.clear()
+        self.tier_counter_vars.clear()
         visible = set(self._visible_model_ids())
         filtering = bool(self.filter_var.get().strip())
         if not visible:
@@ -338,26 +356,68 @@ class BatchApp:
                 self._bind_model_wheel(widget)
 
             if not collapsed:
-                for mid in group_visible:
-                    label = self.model_labels[mid]
-                    text = mid if label == mid else f"{mid}  —  {label}"
-                    checkbutton = ttk.Checkbutton(
-                        self.model_inner,
-                        text=text,
-                        variable=self.model_vars[mid],
-                        command=self._refresh_group_counters,
+                for tier in self.model_tiers.get(group.key, []):
+                    tier_visible = [mid for mid, _label in tier.models if mid in visible]
+                    if not tier_visible:
+                        continue
+                    tier_state_key = self._tier_state_key(group.key, tier.key)
+                    tier_collapsed = tier_state_key in self.collapsed_model_tiers and not filtering
+                    tier_header = ttk.Frame(self.model_inner)
+                    tier_header.pack(fill="x", padx=(28, 5), pady=(2, 0))
+                    tier_header.columnconfigure(1, weight=1)
+                    tier_toggle = ttk.Button(
+                        tier_header,
+                        text="▶" if tier_collapsed else "▼",
+                        width=2,
+                        command=lambda key=tier_state_key: self._toggle_model_tier(key),
                     )
-                    checkbutton.pack(anchor="w", fill="x", padx=(28, 8), pady=1)
-                    self._bind_model_wheel(checkbutton)
-        self._refresh_group_counters()
+                    tier_toggle.grid(row=0, column=0, sticky="w")
+                    tier_counter = tk.StringVar()
+                    self.tier_counter_vars[tier_state_key] = tier_counter
+                    tier_label = ttk.Label(tier_header, textvariable=tier_counter)
+                    tier_label.grid(row=0, column=1, sticky="w", padx=(5, 8))
+                    tier_select = ttk.Button(
+                        tier_header,
+                        text="全选",
+                        width=5,
+                        command=lambda g=group.key, t=tier.key: self._set_tier_models(g, t, True),
+                    )
+                    tier_select.grid(row=0, column=2, padx=(0, 3))
+                    tier_clear = ttk.Button(
+                        tier_header,
+                        text="清空",
+                        width=5,
+                        command=lambda g=group.key, t=tier.key: self._set_tier_models(g, t, False),
+                    )
+                    tier_clear.grid(row=0, column=3)
+                    for widget in (tier_header, tier_toggle, tier_label, tier_select, tier_clear):
+                        self._bind_model_wheel(widget)
 
-    def _refresh_group_counters(self) -> None:
+                    if not tier_collapsed:
+                        for mid in tier_visible:
+                            label = self.model_labels[mid]
+                            text = mid if label == mid else f"{mid}  —  {label}"
+                            checkbutton = ttk.Checkbutton(
+                                self.model_inner,
+                                text=text,
+                                variable=self.model_vars[mid],
+                                command=self._refresh_model_counters,
+                            )
+                            checkbutton.pack(anchor="w", fill="x", padx=(52, 8), pady=1)
+                            self._bind_model_wheel(checkbutton)
+        self._refresh_model_counters()
+
+    def _refresh_model_counters(self) -> None:
         for group in self.model_groups:
             counter = self.group_counter_vars.get(group.key)
-            if counter is None:
-                continue
-            selected = sum(bool(self.model_vars[mid].get()) for mid, _label in group.models)
-            counter.set(f"{group.label}（已选 {selected}/{len(group.models)}）")
+            if counter is not None:
+                selected = sum(bool(self.model_vars[mid].get()) for mid, _label in group.models)
+                counter.set(f"{group.label}（已选 {selected}/{len(group.models)}）")
+            for tier in self.model_tiers.get(group.key, []):
+                tier_counter = self.tier_counter_vars.get(self._tier_state_key(group.key, tier.key))
+                if tier_counter is not None:
+                    selected = sum(bool(self.model_vars[mid].get()) for mid, _label in tier.models)
+                    tier_counter.set(f"{tier.label}（已选 {selected}/{len(tier.models)}）")
 
     def _toggle_model_group(self, group_key: str) -> None:
         if group_key in self.collapsed_model_groups:
@@ -374,7 +434,28 @@ class BatchApp:
                     if mid in visible:
                         self.model_vars[mid].set(value)
                 break
-        self._refresh_group_counters()
+        self._refresh_model_counters()
+
+    @staticmethod
+    def _tier_state_key(group_key: str, tier_key: str) -> str:
+        return f"{group_key}/{tier_key}"
+
+    def _toggle_model_tier(self, tier_state_key: str) -> None:
+        if tier_state_key in self.collapsed_model_tiers:
+            self.collapsed_model_tiers.remove(tier_state_key)
+        else:
+            self.collapsed_model_tiers.add(tier_state_key)
+        self._render_models()
+
+    def _set_tier_models(self, group_key: str, tier_key: str, value: bool) -> None:
+        visible = set(self._visible_model_ids())
+        for tier in self.model_tiers.get(group_key, []):
+            if tier.key == tier_key:
+                for mid, _label in tier.models:
+                    if mid in visible:
+                        self.model_vars[mid].set(value)
+                break
+        self._refresh_model_counters()
 
     def _bind_model_wheel(self, widget: tk.Misc) -> None:
         widget.bind("<MouseWheel>", self._scroll_model_list)
@@ -398,7 +479,7 @@ class BatchApp:
     def _set_visible_models(self, value: bool) -> None:
         for mid in self._visible_model_ids():
             self.model_vars[mid].set(value)
-        self._refresh_group_counters()
+        self._refresh_model_counters()
 
     @staticmethod
     def _positive_int(value: str, label: str) -> int:
@@ -516,6 +597,7 @@ class BatchApp:
                  "base_url": self.base_url_var.get().strip(), "input_files": [line.strip() for line in self.input_files.get("1.0", "end-1c").splitlines() if line.strip()],
                  "selected_models": [mid for mid, var in self.model_vars.items() if var.get()], "model_filter": self.filter_var.get(),
                  "collapsed_model_groups": sorted(self.collapsed_model_groups),
+                 "collapsed_model_tiers": sorted(self.collapsed_model_tiers),
                  "remember_direct_input": self.remember_direct_var.get(), "direct_input": direct}
         atomic_write_json(self.paths["state"], state)
 
@@ -575,10 +657,15 @@ def self_test(config_path: Path) -> int:
     paths = resolve_config_paths(config, config_path)
     profiles = BatchApp._load_profiles(paths["profiles"])
     models = parse_llama_swap_models(paths["model_config"])
-    groups = group_models(list(models.items()), config.get("model_source", {}).get("grouping", {}))
+    grouping = config.get("model_source", {}).get("grouping", {})
+    groups = group_models(list(models.items()), grouping)
+    tiering = grouping.get("parameter_tiers", {})
     result = {"config": str(config_path), "engine_exists": paths["engine"].is_file(), "profiles": list(profiles),
               "model_config_exists": paths["model_config"].is_file(), "config_model_count": len(models),
-              "model_groups": [{"key": group.key, "label": group.label, "count": len(group.models)} for group in groups],
+              "model_groups": [{"key": group.key, "label": group.label, "count": len(group.models),
+                                "parameter_tiers": [{"key": tier.key, "label": tier.label, "count": len(tier.models)}
+                                                    for tier in group_model_tiers(list(group.models), tiering)]}
+                               for group in groups],
               "state_path": str(paths["state"]), "python": sys.executable, "tk_version": tk.TkVersion}
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["engine_exists"] and profiles and models and groups else 1
