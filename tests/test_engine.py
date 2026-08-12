@@ -14,6 +14,8 @@ from prompt_batch import BatchOptions, run_batch, validate_batch
 class MockApiHandler(BaseHTTPRequestHandler):
     models = ["model-a", "model-b"]
     requests: list[dict] = []
+    failed_requests: set[tuple[str, int, str]] = set()
+    invalid_json_requests: set[tuple[str, int, str]] = set()
 
     def log_message(self, _format: str, *_args) -> None:
         return
@@ -22,6 +24,13 @@ class MockApiHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_raw(self, body: bytes, content_type: str = "application/json") -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -38,6 +47,14 @@ class MockApiHandler(BaseHTTPRequestHandler):
         request["_authorization"] = self.headers.get("Authorization")
         self.requests.append(request)
         user_content = request["messages"][-1]["content"]
+        input_name = user_content.splitlines()[-1].split()[0]
+        request_key = (request["model"], request["seed"], input_name)
+        if request_key in self.failed_requests:
+            self.send_error(503, "simulated model failure")
+            return
+        if request_key in self.invalid_json_requests:
+            self._send_raw(b"{invalid-json")
+            return
         marker = '"TOKEN"' if '"TOKEN"' in user_content else "plain"
         content = f"result: {marker}\nmodel={request['model']} seed={request['seed']}"
         self._send({
@@ -53,6 +70,9 @@ class EngineTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), MockApiHandler)
         MockApiHandler.requests = []
+        MockApiHandler.models = ["model-a", "model-b"]
+        MockApiHandler.failed_requests = set()
+        MockApiHandler.invalid_json_requests = set()
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.base_url = f"http://127.0.0.1:{self.server.server_address[1]}/v1"
@@ -271,6 +291,65 @@ class EngineTests(unittest.TestCase):
         manifest_text = (run_dir / "manifest.json").read_text(encoding="utf-8")
         self.assertNotIn("secret-value", manifest_text)
         self.assertIn("PROMPT_BATCH_TEST_KEY", manifest_text)
+
+    def test_missing_model_interrupts_before_any_generation_request(self) -> None:
+        MockApiHandler.models = ["model-a"]
+        options = self.options()
+        with self.assertRaisesRegex(RuntimeError, "model-b"):
+            run_batch(options, log=lambda _message: None)
+
+        self.assertEqual(MockApiHandler.requests, [])
+        manifest = json.loads((options.run_directory / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["status"], "interrupted")
+        self.assertIn("model-b", manifest["error"])
+
+    def test_partial_http_failure_is_recorded_and_reports_are_still_written(self) -> None:
+        MockApiHandler.failed_requests = {("model-a", 41, "second")}
+        options = self.options()
+        options.model_ids = ["model-a"]
+        options.repeats = 1
+        events: list[dict] = []
+
+        with self.assertRaisesRegex(RuntimeError, "Failures: 1"):
+            run_batch(options, log=lambda _message: None, event=events.append)
+
+        run_dir = options.run_directory
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["status"], "completed_with_failures")
+        self.assertEqual(len(manifest["failures"]), 1)
+        success_record = json.loads(
+            (run_dir / "raw" / "model-a" / "one" / "run-01.record.json").read_text(encoding="utf-8")
+        )
+        failure_record = json.loads(
+            (run_dir / "raw" / "model-a" / "two" / "run-01.record.json").read_text(encoding="utf-8")
+        )
+        self.assertTrue(success_record["success"])
+        self.assertFalse(failure_record["success"])
+        self.assertEqual(failure_record["finish_reason"], "request_error")
+        for name in ("ALL.md", "RAW.md", "RECORDS.csv", "OBSERVATIONS.csv", "SUMMARY.md"):
+            self.assertTrue((run_dir / name).is_file(), name)
+        finished = next(event for event in events if event["type"] == "batch_finished")
+        self.assertEqual((finished["completed"], finished["failures"]), (2, 1))
+
+    def test_invalid_json_failure_does_not_prevent_later_items(self) -> None:
+        MockApiHandler.invalid_json_requests = {("model-a", 41, "first")}
+        options = self.options()
+        options.model_ids = ["model-a"]
+        options.repeats = 1
+
+        with self.assertRaisesRegex(RuntimeError, "Failures: 1"):
+            run_batch(options, log=lambda _message: None)
+
+        self.assertEqual(len(MockApiHandler.requests), 2)
+        failed_record = json.loads(
+            (options.run_directory / "raw" / "model-a" / "one" / "run-01.record.json").read_text(encoding="utf-8")
+        )
+        later_record = json.loads(
+            (options.run_directory / "raw" / "model-a" / "two" / "run-01.record.json").read_text(encoding="utf-8")
+        )
+        self.assertFalse(failed_record["success"])
+        self.assertIn("invalid JSON", failed_record["error"])
+        self.assertTrue(later_record["success"])
 
 
 if __name__ == "__main__":

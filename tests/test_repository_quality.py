@@ -80,6 +80,12 @@ class RepositoryQualityTests(unittest.TestCase):
             atomic_write_json(path, {"ready": True})
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"ready": True})
 
+    def test_ci_covers_supported_windows_python_versions(self) -> None:
+        workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.assertIn('python-version: ["3.11", "3.14"]', workflow)
+        self.assertIn("python -B -m unittest discover -s tests -v", workflow)
+        self.assertIn("runs-on: windows-latest", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

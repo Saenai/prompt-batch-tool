@@ -10,6 +10,7 @@
 - 配置版本迁移、JSON Schema 和后端 adapter；
 - 断点续跑、仅重试失败项和结构化 GUI 进度；
 - 分层中文文档和统一命名约定。
+- Windows/Python 3.11 与 3.14 持续集成，以及传输超时、无效 JSON、模型缺失、部分失败和进程终止测试。
 
 ### Changed
 
@@ -17,6 +18,7 @@
 - Python 业务实现迁入 `prompt_batch` 包内；
 - 批处理实现按准备、协调、运行时、存储、报表和后端职责拆分；
 - 模型选择器从主窗口控制器中拆为独立 GUI 组件；
+- GUI 与批处理运行时共用同一进程树终止实现；后端协议错误现在包含 endpoint 上下文。
 - `model_source` 公开术语调整为更明确的 `model_catalog`。
 
 ### Compatibility

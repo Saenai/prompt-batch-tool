@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from .openai_compatible import OpenAICompatibleBackend
+from .openai_compatible import BackendResponseError, OpenAICompatibleBackend
 
 
 class ChatBackend(Protocol):
@@ -40,4 +40,7 @@ def create_backend(config: dict[str, Any], base_url: str) -> ChatBackend:
     raise ValueError(f"Unsupported backend adapter: {adapter}")
 
 
-__all__ = ["ChatBackend", "OpenAICompatibleBackend", "backend_identity", "create_backend"]
+__all__ = [
+    "BackendResponseError", "ChatBackend", "OpenAICompatibleBackend",
+    "backend_identity", "create_backend",
+]

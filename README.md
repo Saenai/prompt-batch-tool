@@ -44,6 +44,7 @@ python .\batch_cli.py `
 - profile 驱动模式、system prompt、请求参数、输出校验及观察项；
 - 逐项原子记录，支持断点续跑和仅重试失败项；
 - 原始响应、交付结果、汇总 Markdown、CSV 和 manifest 分离保存。
+- Windows CI 在 Python 3.11 与 3.14 上验证核心、GUI 导入、CLI 和兼容入口。
 
 ## 仓库结构
 

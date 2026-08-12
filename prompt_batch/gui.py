@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import queue
 import subprocess
 import sys
@@ -20,6 +19,7 @@ from .model_catalog import (
     group_parameter_tiers,
     parse_llama_swap_models,
 )
+from .runtime import terminate_process_tree
 from .storage import atomic_write_json
 
 
@@ -406,13 +406,7 @@ class PromptBatchApp:
     def _terminate_tree(self) -> None:
         if self.process is None or self.process.poll() is not None:
             return
-        system_root = os.environ.get("SystemRoot")
-        taskkill = (Path(system_root) / "System32" / "taskkill.exe") if system_root else None
-        if taskkill and taskkill.is_file():
-            subprocess.run([str(taskkill), "/PID", str(self.process.pid), "/T", "/F"], stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        else:
-            self.process.terminate()
+        terminate_process_tree(self.process)
 
     def _save_state(self) -> None:
         direct = self.direct_input.get("1.0", "end-1c") if self.remember_direct_var.get() else ""

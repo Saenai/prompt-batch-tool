@@ -2,11 +2,34 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
 from ..config import join_endpoint
+
+
+class BackendResponseError(RuntimeError):
+    """Raised when an endpoint responds but violates the adapter contract."""
+
+
+def _decode_object(raw_response: str, uri: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise BackendResponseError(f"Backend returned invalid JSON from {uri}: {exc.msg}") from exc
+    if not isinstance(payload, dict):
+        raise BackendResponseError(f"Backend returned a non-object JSON response from {uri}")
+    return payload
+
+
+def _open(request: urllib.request.Request, timeout: float):
+    try:
+        return urllib.request.urlopen(request, timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        raise
 
 
 @dataclass(frozen=True)
@@ -39,8 +62,9 @@ class OpenAICompatibleBackend:
 
     def get_models(self, timeout: float = 10) -> dict[str, Any]:
         request = urllib.request.Request(self.models_uri, headers=self._headers())
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8-sig"))
+        with _open(request, timeout) as response:
+            raw_response = response.read().decode("utf-8-sig")
+        return _decode_object(raw_response, self.models_uri)
 
     def list_model_ids(self, timeout: float = 10) -> list[str]:
         payload = self.get_models(timeout)
@@ -65,6 +89,6 @@ class OpenAICompatibleBackend:
             method="POST",
             headers=self._headers(content_type=True),
         )
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with _open(request, timeout) as response:
             raw_response = response.read().decode("utf-8-sig")
-        return raw_response, json.loads(raw_response)
+        return raw_response, _decode_object(raw_response, self.chat_uri)
