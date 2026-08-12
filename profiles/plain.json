@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "plain",
+  "display_name": "普通 Prompt",
+  "description": "无结构约束的通用文本生成批次。",
+  "default_mode": "default",
+  "allow_auto_mode": false,
+  "modes": {
+    "default": {
+      "display_name": "Default",
+      "system_prompt_text": ""
+    }
+  },
+  "validation": {
+    "required_patterns": [],
+    "forbidden_patterns": []
+  },
+  "observations": [],
+  "output": {
+    "run_prefix": "prompt-batch",
+    "aggregate_title": "Prompt Batch Outputs",
+    "summary_title": "Prompt Batch Summary",
+    "all_outputs_file": "ALL-OUTPUTS.md",
+    "raw_outputs_file": "ALL-OUTPUTS-RAW.md",
+    "records_file": "BATCH-RECORDS.csv",
+    "observations_file": "OBSERVATIONS.csv",
+    "summary_file": "BATCH-SUMMARY.md"
+  }
+}

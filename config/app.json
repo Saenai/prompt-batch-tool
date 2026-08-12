@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "app": {
+    "title": "Prompt Batch Generator"
+  },
+  "paths": {
+    "engine": "../run-batch.ps1",
+    "profiles": "../profiles",
+    "state": "../state/gui-state.json",
+    "default_output_root": "../../generations/prompt-batches",
+    "model_config": "../../llama-swap/config.yaml",
+    "router_executable": "../../llama-swap/llama-swap.exe",
+    "router_working_directory": "../../llama-swap",
+    "runtime_executable": "../../llama-current/llama-server.exe"
+  },
+  "backend": {
+    "type": "openai-chat-completions",
+    "base_url": "http://127.0.0.1:8081/v1",
+    "models_endpoint": "/models",
+    "chat_endpoint": "/chat/completions",
+    "request_timeout_seconds": 3600,
+    "readiness_timeout_seconds": 60,
+    "request_body": {}
+  },
+  "router": {
+    "arguments": [
+      "--config",
+      "config.yaml",
+      "--listen",
+      "127.0.0.1:8081"
+    ],
+    "managed_process_names": [
+      "llama-swap",
+      "llama-server"
+    ]
+  },
+  "runtime": {
+    "version_arguments": [
+      "--version"
+    ]
+  },
+  "model_source": {
+    "fallback_format": "llama-swap-yaml"
+  },
+  "defaults": {
+    "profile": "h3",
+    "mode": "auto",
+    "repeats": 3,
+    "max_tokens": 8192,
+    "seed_base": 1,
+    "remember_direct_input": false
+  }
+}

@@ -1,0 +1,20 @@
+# User-local GUI state
+state/
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Runtime and temporary artifacts
+*.tmp
+*.log
+router-logs/
+
+# Editor and OS metadata
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+

@@ -1,0 +1,138 @@
+# Prompt Batch Generator
+
+这是一个面向 OpenAI-compatible Chat Completions 接口的本地 prompt 批量生成工具。GUI、批处理引擎和任务规则彼此分离：程序负责组合“模型 × 重复次数 × 输入”，profile 负责定义 system prompt、mode、输出校验和后处理。
+
+## 启动
+
+双击 `launch-gui.cmd`，或运行：
+
+```powershell
+python .\app.py --config .\config\app.json
+```
+
+无需安装第三方 Python 包；GUI 使用标准库 Tkinter。
+
+## 执行顺序
+
+```text
+model 1 → repeat 1 → input 1, input 2, ...
+        → repeat 2 → input 1, input 2, ...
+model 2 → repeat 1 → input 1, input 2, ...
+```
+
+同一模型会处理完整批次后再切换模型，以减少 llama-swap 反复卸载和加载模型。总请求数为“模型数 × input 数 × repeats”。
+
+输入文件和“直接输入”可以同时使用。GUI 会生成临时 input manifest；引擎把实际内容冻结到最终运行目录，GUI 随后清理临时文件。
+
+## 配置层次
+
+### 应用配置
+
+`config/app.json` 保存环境与后端信息：
+
+- 引擎、profile、状态、输出和模型配置的位置；
+- router、运行时及工作目录；
+- API endpoint 与超时；
+- GUI 默认参数。
+
+所有文件路径都相对于 `app.json` 解析，也支持 `~`、`%ENV_VAR%` 与 `${ENV_VAR}`。代码中不保存本机工作区或用户名的绝对路径。
+
+### Profile
+
+`profiles/*.json` 保存任务特性。当前提供：
+
+- `plain.json`：无结构约束的普通文本生成；
+- `h3.json`：MiniMax H3 五种 mode、原生 system prompt、字段校验及 trigger 观察。
+
+GUI 自动发现 profile，并据此刷新 mode 下拉框。新增任务类型不需要修改 Python 或 PowerShell，只需增加 profile。
+
+Profile 的主要结构：
+
+```json
+{
+  "id": "example",
+  "display_name": "Example",
+  "default_mode": "default",
+  "allow_auto_mode": false,
+  "modes": {
+    "default": {
+      "system_prompt": "prompts/system.md",
+      "validation": {
+        "required_patterns": ["(?m)^result:"]
+      }
+    }
+  },
+  "observations": [],
+  "output": {
+    "all_outputs_file": "ALL-OUTPUTS.md"
+  }
+}
+```
+
+应用配置、profile 和单个 mode 都可声明 `request_body`。引擎按“应用 → profile → mode”依次合并，随后用当前模型、messages、max tokens、seed 和 stream 覆盖核心字段。由此可以为新任务声明 temperature、top_p 或后端扩展参数，而不修改引擎。
+
+system prompt 路径相对于 profile 的 `system_prompt_root`；未设置 root 时，相对于 profile 文件。也可使用 `system_prompt_text` 保存短小的内联 system prompt。
+
+`required_patterns` 和 `forbidden_patterns` 使用 .NET 正则表达式。`observations` 可从输入捕获需要观察的文本，并声明是否只在模型原样返回 marker 时生成去 marker 的交付副本。
+
+## 状态记忆
+
+状态文件位置由 `app.json` 的 `paths.state` 决定。GUI 关闭或开始运行时会记住：
+
+- profile 与 mode；
+-输出路径、API、repeats、max tokens、seed；
+- input 文件列表；
+- 模型勾选和筛选词；
+- 窗口大小。
+
+“直接输入”正文默认不会持久化。只有显式勾选“记住正文”后才会写入状态文件。状态使用同目录临时文件加原子替换，避免异常退出留下半截 JSON。
+
+若要恢复初始状态，关闭 GUI 后删除 `state/gui-state.json` 即可。
+
+## 模型发现
+
+GUI 优先请求应用配置中的 models endpoint。接口不可用时，按 `model_source.fallback_format` 从模型配置中读取；当前配置使用 `llama-swap-yaml`。模型 ID 不写在 Python 或 profile 中。
+
+当前实现的后端 adapter 是 `openai-chat-completions`。如果 GUI 中填写的 Base URL 与应用配置不同，接口不可用时程序不会擅自启动本地 router；只有配置中的本地 URL 才对应配置中的 router 启动命令。
+
+## 输出
+
+通用目录结构为：
+
+```text
+results/<model>/<input>/run-*.md
+final-results/<model>/<input>/run-*.md
+raw/<model>/<input>/run-*.json
+input/
+manifest.json
+```
+
+集中输出、CSV 和摘要的文件名由 profile 决定。原始输出与后处理交付版始终分开保存。
+
+## 命令行与验证
+
+引擎直接调用示例：
+
+```powershell
+& .\run-batch.ps1 `
+  -AppConfigPath .\config\app.json `
+  -ProfilePath .\profiles\plain.json `
+  -InputManifestPath .\inputs.json `
+  -Mode default `
+  -Repeats 2 `
+  -MaxTokens 2048 `
+  -SeedBase 100 `
+  -ModelIdsCsv 'model-a,model-b'
+```
+
+加入 `-ValidateOnly` 只检查配置、输入和 system prompt，不启动 router 或模型。
+
+GUI 自检：
+
+```powershell
+python .\app.py --config .\config\app.json --self-test
+```
+
+## 兼容入口
+
+原来的 `..\h3-prompt-gui` 与 `..\scripts\generate-h3-prompts.ps1` 保留为薄转发层，默认使用 `profiles/h3.json`。新功能与配置只在本目录维护。
