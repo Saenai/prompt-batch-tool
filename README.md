@@ -111,6 +111,22 @@ system prompt 路径相对于 profile 的 `system_prompt_root`；未设置 root 
 
 GUI 优先请求应用配置中的 models endpoint。接口不可用时，按 `model_source.fallback_format` 从模型配置中读取；当前配置使用 `llama-swap-yaml`。模型 ID 不写在 Python 或 profile 中。
 
+模型列表按 `model_source.grouping` 动态分组。默认从模型 ID 的第一个 `-` 之前提取系列键，再由配置中的 `aliases` 设置易读名称、由 `order` 控制组顺序；Python GUI 中没有写死 Qwen、Gemma 等系列。新系列即使没有 alias 也会自动出现为独立分组。
+
+每个分组可以折叠，并可单独全选或清空。折叠状态随 GUI 状态保存；输入筛选词时，包含匹配结果的分组会临时展开。筛选状态下的全局或组内选择操作只影响当前可见模型。
+
+分组配置示例：
+
+```json
+"grouping": {
+  "enabled": true,
+  "pattern": "^([^-]+)",
+  "match_group": 1,
+  "aliases": {"qwen3.6": "Qwen 3.6"},
+  "order": ["qwen3.6"]
+}
+```
+
 当前实现的后端 adapter 是 `openai-chat-completions`。如果 GUI 中填写的 Base URL 与应用配置不同，接口不可用时程序不会擅自启动本地 router；只有配置中的本地 URL 才对应配置中的 router 启动命令。
 
 ## 输出
