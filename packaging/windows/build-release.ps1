@@ -24,7 +24,7 @@ $archiveName = "PromptBatchGenerator-$safeVersion-windows-x64"
 $packagePath = Join-Path $outputRoot 'prompt-batch-tool'
 $archivePath = Join-Path $outputRoot "$archiveName.zip"
 $checksumPath = "$archivePath.sha256"
-$temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "prompt-batch-tool-$PID-$([guid]::NewGuid().ToString('N'))"
+$temporaryRoot = Join-Path $outputRoot ".build-$PID-$([guid]::NewGuid().ToString('N'))"
 $binaryDirectory = Join-Path $temporaryRoot 'bin'
 
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
