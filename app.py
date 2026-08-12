@@ -4,31 +4,19 @@ import argparse
 import json
 import os
 import queue
-import re
-import shutil
 import subprocess
 import sys
 import tempfile
 import threading
-import urllib.request
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
+from prompt_batch.config import load_json, resolve_config_paths
+from prompt_batch.model_source import discover_models, parse_llama_swap_models
+
 
 APP_DIR = Path(__file__).resolve().parent
-
-
-def expand_path(value: str, base: Path) -> Path:
-    expanded = os.path.expanduser(os.path.expandvars(value))
-    path = Path(expanded)
-    if not path.is_absolute():
-        path = base / path
-    return path.resolve()
-
-
-def load_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def atomic_write_json(path: Path, payload: dict) -> None:
@@ -38,61 +26,13 @@ def atomic_write_json(path: Path, payload: dict) -> None:
     os.replace(temporary, path)
 
 
-def parse_llama_swap_models(path: Path) -> dict[str, str]:
-    models: dict[str, str] = {}
-    if not path.is_file():
-        return models
-    in_models = False
-    current_id: str | None = None
-    for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
-        if not in_models:
-            if raw_line.strip() == "models:" and not raw_line.startswith((" ", "\t")):
-                in_models = True
-            continue
-        if raw_line and not raw_line.startswith((" ", "\t", "#")):
-            break
-        model_match = re.match(r"^  ([^\s:#][^:]*):\s*(?:#.*)?$", raw_line)
-        if model_match:
-            current_id = model_match.group(1).strip().strip('"\'')
-            models[current_id] = current_id
-            continue
-        name_match = re.match(r"^    name:\s*(.*?)\s*$", raw_line)
-        if current_id and name_match:
-            value = name_match.group(1).strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                value = value[1:-1]
-            if value:
-                models[current_id] = value
-    return models
-
-
-def fetch_model_ids(base_url: str, endpoint: str, timeout: float = 2.5) -> list[str]:
-    uri = base_url.rstrip("/") + "/" + endpoint.lstrip("/")
-    request = urllib.request.Request(uri, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8-sig"))
-    return sorted({str(item["id"]) for item in payload.get("data", []) if item.get("id")}, key=str.casefold)
-
-
-def powershell_executable() -> str:
-    system_root = os.environ.get("SystemRoot")
-    if system_root:
-        candidate = Path(system_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-        if candidate.is_file():
-            return str(candidate)
-    found = shutil.which("powershell.exe") or shutil.which("pwsh.exe")
-    if not found:
-        raise FileNotFoundError("未找到 PowerShell")
-    return found
-
-
 class BatchApp:
     def __init__(self, root: tk.Tk, config_path: Path) -> None:
         self.root = root
         self.config_path = config_path.resolve()
         self.config_dir = self.config_path.parent
         self.config = load_json(self.config_path)
-        self.paths = {name: expand_path(str(value), self.config_dir) for name, value in self.config["paths"].items()}
+        self.paths = resolve_config_paths(self.config, self.config_path)
         self.profiles = self._load_profiles(self.paths["profiles"])
         self.state = self._load_state()
         defaults = self.config.get("defaults", {})
@@ -327,13 +267,7 @@ class BatchApp:
         fallback_format = self.config.get("model_source", {}).get("fallback_format")
 
         def worker() -> None:
-            fallback = parse_llama_swap_models(model_config) if fallback_format == "llama-swap-yaml" else {}
-            try:
-                api_ids = fetch_model_ids(base_url, endpoint)
-                models = [(model_id, fallback.get(model_id, model_id)) for model_id in api_ids]
-                self.events.put(("models", (models, "API")))
-            except Exception:
-                self.events.put(("models", (sorted(fallback.items(), key=lambda item: item[0].casefold()), "配置文件")))
+            self.events.put(("models", discover_models(base_url, endpoint, model_config, fallback_format)))
         threading.Thread(target=worker, daemon=True).start()
 
     def _apply_models(self, models: list[tuple[str, str]], source: str) -> None:
@@ -432,17 +366,19 @@ class BatchApp:
             raise ValueError("Seed base 超出 Int32 范围")
         self.temp_manifest = self._create_manifest()
         profile_path = self.profiles[self.profile_var.get()][0]
-        command = [powershell_executable(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(self.paths["engine"]),
-                   "-AppConfigPath", str(self.config_path), "-ProfilePath", str(profile_path),
-                   "-InputManifestPath", str(self.temp_manifest), "-Mode", self.mode_var.get(),
-                   "-BaseUrl", self.base_url_var.get().strip(), "-Repeats", str(repeats), "-MaxTokens", str(max_tokens),
-                   "-SeedBase", str(seed_base), "-ModelIdsCsv", ",".join(selected)]
-        for flag, value in (("-OutputRoot", self.output_root_var.get().strip()), ("-RunDirectory", self.run_directory_var.get().strip()),
-                            ("-SystemPromptPath", self.system_prompt_var.get().strip())):
+        command = [sys.executable, "-B", str(self.paths["engine"]),
+                   "--app-config", str(self.config_path), "--profile", str(profile_path),
+                   "--input-manifest", str(self.temp_manifest), "--mode", self.mode_var.get(),
+                   "--base-url", self.base_url_var.get().strip(), "--repeats", str(repeats), "--max-tokens", str(max_tokens),
+                   "--seed-base", str(seed_base)]
+        for model_id in selected:
+            command.extend(("--model", model_id))
+        for flag, value in (("--output-root", self.output_root_var.get().strip()), ("--run-directory", self.run_directory_var.get().strip()),
+                            ("--system-prompt", self.system_prompt_var.get().strip())):
             if value:
                 command.extend((flag, value))
         if validate_only:
-            command.append("-ValidateOnly")
+            command.append("--validate-only")
         return command
 
     def start_run(self, validate_only: bool) -> None:
@@ -555,13 +491,12 @@ class BatchApp:
 
 def self_test(config_path: Path) -> int:
     config = load_json(config_path)
-    config_dir = config_path.parent
-    paths = {name: expand_path(str(value), config_dir) for name, value in config["paths"].items()}
+    paths = resolve_config_paths(config, config_path)
     profiles = BatchApp._load_profiles(paths["profiles"])
     models = parse_llama_swap_models(paths["model_config"])
     result = {"config": str(config_path), "engine_exists": paths["engine"].is_file(), "profiles": list(profiles),
               "model_config_exists": paths["model_config"].is_file(), "config_model_count": len(models),
-              "state_path": str(paths["state"]), "powershell": powershell_executable(), "tk_version": tk.TkVersion}
+              "state_path": str(paths["state"]), "python": sys.executable, "tk_version": tk.TkVersion}
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["engine_exists"] and profiles and models else 1
 

@@ -1,6 +1,6 @@
 # Prompt Batch Generator
 
-这是一个面向 OpenAI-compatible Chat Completions 接口的本地 prompt 批量生成工具。GUI、批处理引擎和任务规则彼此分离：程序负责组合“模型 × 重复次数 × 输入”，profile 负责定义 system prompt、mode、输出校验和后处理。
+这是一个面向 OpenAI-compatible Chat Completions 接口的本地 prompt 批量生成工具。GUI、Python 批处理引擎和任务规则彼此分离：程序负责组合“模型 × 重复次数 × 输入”，profile 负责定义 system prompt、mode、输出校验和后处理。
 
 ## 启动
 
@@ -10,7 +10,25 @@
 python .\app.py --config .\config\app.json
 ```
 
-无需安装第三方 Python 包；GUI 使用标准库 Tkinter。
+无需安装第三方 Python 包；GUI、HTTP client、批次引擎和测试均使用 Python 标准库。GUI 不依赖 PowerShell。
+
+## 架构
+
+```text
+app.py (Tkinter GUI)
+        ↓
+batch_cli.py (CLI)
+        ↓
+prompt_batch/engine.py
+        ├─ config.py
+        ├─ model_source.py
+        └─ profile JSON
+```
+
+- `app.py` 只处理 GUI、状态与子进程日志。
+- `batch_cli.py` 是权威命令行入口。
+- `prompt_batch/engine.py` 处理批次、HTTP、router 生命周期、校验、后处理与输出。
+- `run-batch.ps1` 仅将旧 PowerShell 参数翻译为 Python CLI 参数，不含业务逻辑。
 
 ## 执行顺序
 
@@ -44,7 +62,7 @@ model 2 → repeat 1 → input 1, input 2, ...
 - `plain.json`：无结构约束的普通文本生成；
 - `h3.json`：MiniMax H3 五种 mode、原生 system prompt、字段校验及 trigger 观察。
 
-GUI 自动发现 profile，并据此刷新 mode 下拉框。新增任务类型不需要修改 Python 或 PowerShell，只需增加 profile。
+GUI 自动发现 profile，并据此刷新 mode 下拉框。新增任务类型通常只需增加 profile，不必复制 GUI 或批处理引擎。
 
 Profile 的主要结构：
 
@@ -73,7 +91,7 @@ Profile 的主要结构：
 
 system prompt 路径相对于 profile 的 `system_prompt_root`；未设置 root 时，相对于 profile 文件。也可使用 `system_prompt_text` 保存短小的内联 system prompt。
 
-`required_patterns` 和 `forbidden_patterns` 使用 .NET 正则表达式。`observations` 可从输入捕获需要观察的文本，并声明是否只在模型原样返回 marker 时生成去 marker 的交付副本。
+`required_patterns` 和 `forbidden_patterns` 使用 Python `re` 正则表达式。`observations` 可从输入捕获需要观察的文本，并声明是否只在模型原样返回 marker 时生成去 marker 的交付副本。
 
 ## 状态记忆
 
@@ -111,21 +129,22 @@ manifest.json
 
 ## 命令行与验证
 
-引擎直接调用示例：
+Python CLI 直接调用示例：
 
 ```powershell
-& .\run-batch.ps1 `
-  -AppConfigPath .\config\app.json `
-  -ProfilePath .\profiles\plain.json `
-  -InputManifestPath .\inputs.json `
-  -Mode default `
-  -Repeats 2 `
-  -MaxTokens 2048 `
-  -SeedBase 100 `
-  -ModelIdsCsv 'model-a,model-b'
+python .\batch_cli.py `
+  --app-config .\config\app.json `
+  --profile .\profiles\plain.json `
+  --input-manifest .\inputs.json `
+  --mode default `
+  --repeats 2 `
+  --max-tokens 2048 `
+  --seed-base 100 `
+  --model model-a `
+  --model model-b
 ```
 
-加入 `-ValidateOnly` 只检查配置、输入和 system prompt，不启动 router 或模型。
+加入 `--validate-only` 只检查配置、输入和 system prompt，不启动 router 或模型。
 
 GUI 自检：
 
@@ -133,6 +152,12 @@ GUI 自检：
 python .\app.py --config .\config\app.json --self-test
 ```
 
+运行内置 mock API 测试：
+
+```powershell
+python -B -m unittest discover -s tests -v
+```
+
 ## 兼容入口
 
-原来的 `..\h3-prompt-gui` 与 `..\scripts\generate-h3-prompts.ps1` 保留为薄转发层，默认使用 `profiles/h3.json`。新功能与配置只在本目录维护。
+`run-batch.ps1`、原来的 `..\h3-prompt-gui` 与 `..\scripts\generate-h3-prompts.ps1` 保留为薄兼容层。它们最终都调用 `batch_cli.py`，默认 H3 入口使用 `profiles/h3.json`。新功能与配置只在 Python 引擎和本目录维护。

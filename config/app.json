@@ -4,7 +4,7 @@
     "title": "Prompt Batch Generator"
   },
   "paths": {
-    "engine": "../run-batch.ps1",
+    "engine": "../batch_cli.py",
     "profiles": "../profiles",
     "state": "../state/gui-state.json",
     "default_output_root": "../../generations/prompt-batches",

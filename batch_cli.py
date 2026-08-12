@@ -1,0 +1,59 @@
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from prompt_batch import BatchOptions, run_batch, validate_batch
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Profile-driven prompt batch generator")
+    parser.add_argument("--app-config", required=True, type=Path)
+    parser.add_argument("--profile", required=True, type=Path)
+    parser.add_argument("--input-manifest", required=True, type=Path)
+    parser.add_argument("--mode", default="auto")
+    parser.add_argument("--system-prompt", type=Path)
+    parser.add_argument("--base-url")
+    parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--run-directory", type=Path)
+    parser.add_argument("--repeats", required=True, type=int)
+    parser.add_argument("--max-tokens", required=True, type=int)
+    parser.add_argument("--seed-base", required=True, type=int)
+    parser.add_argument("--model", dest="models", action="append", required=True)
+    parser.add_argument("--validate-only", action="store_true")
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    options = BatchOptions(
+        app_config_path=args.app_config,
+        profile_path=args.profile,
+        input_manifest_path=args.input_manifest,
+        mode=args.mode,
+        repeats=args.repeats,
+        max_tokens=args.max_tokens,
+        seed_base=args.seed_base,
+        model_ids=args.models,
+        system_prompt_path=args.system_prompt,
+        base_url=args.base_url,
+        output_root=args.output_root,
+        run_directory=args.run_directory,
+    )
+    try:
+        if args.validate_only:
+            report = validate_batch(options)
+            print(f"Validation OK: profile={report.profile_id}, inputs={len(report.cases)}, models={report.model_count}.")
+            for case in report.cases:
+                print(f"  {case.case_id}: mode={case.mode}, source={case.source_kind}, system={case.system_prompt_source}")
+        else:
+            run_batch(options)
+        return 0
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
