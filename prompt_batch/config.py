@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 
-APP_CONFIG_VERSION = 3
+APP_CONFIG_VERSION = 4
 PROFILE_VERSION = 1
 GPU_MONITOR_DEFAULTS = {
     "enabled": True,
@@ -68,9 +68,17 @@ def migrate_app_config(payload: dict[str, Any]) -> dict[str, Any]:
     if version == 2:
         migrated.setdefault("gpu_monitor", deepcopy(GPU_MONITOR_DEFAULTS))
         migrated["schema_version"] = 3
+        version = 3
+    if version == 3:
+        router = _mapping(_required(migrated, "router", "app config"), "router")
+        router.setdefault("control_base_url", "http://127.0.0.1:8081")
+        router.setdefault("unload_all_endpoint", "/api/models/unload")
+        router.setdefault("control_timeout_seconds", 30)
+        migrated.setdefault("result_browser", {"max_entries": 12})
+        migrated["schema_version"] = 4
     elif version != APP_CONFIG_VERSION:
         raise ConfigValidationError(
-            f"Unsupported app config schema_version {version}; expected 1, 2, or {APP_CONFIG_VERSION}"
+            f"Unsupported app config schema_version {version}; expected 1 through {APP_CONFIG_VERSION}"
         )
     return migrated
 
@@ -109,6 +117,11 @@ def validate_app_config(config: dict[str, Any]) -> None:
     router = _mapping(_required(config, "router", "app config"), "router")
     _string_list(_required(router, "arguments", "router"), "router.arguments")
     _string_list(_required(router, "managed_process_names", "router"), "router.managed_process_names")
+    _string(_required(router, "control_base_url", "router"), "router.control_base_url")
+    _string(_required(router, "unload_all_endpoint", "router"), "router.unload_all_endpoint")
+    control_timeout = _required(router, "control_timeout_seconds", "router")
+    if not isinstance(control_timeout, (int, float)) or isinstance(control_timeout, bool) or control_timeout <= 0:
+        raise ConfigValidationError("router.control_timeout_seconds must be a positive number")
     runtime = _mapping(_required(config, "runtime", "app config"), "runtime")
     _string_list(_required(runtime, "version_arguments", "runtime"), "runtime.version_arguments")
 
@@ -127,6 +140,11 @@ def validate_app_config(config: dict[str, Any]) -> None:
     timeout = _required(gpu_monitor, "query_timeout_seconds", "gpu_monitor")
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
         raise ConfigValidationError("gpu_monitor.query_timeout_seconds must be a positive number")
+
+    result_browser = _mapping(_required(config, "result_browser", "app config"), "result_browser")
+    max_entries = _required(result_browser, "max_entries", "result_browser")
+    if not isinstance(max_entries, int) or isinstance(max_entries, bool) or not 1 <= max_entries <= 100:
+        raise ConfigValidationError("result_browser.max_entries must be an integer from 1 to 100")
 
 
 def load_app_config(path: Path) -> dict[str, Any]:

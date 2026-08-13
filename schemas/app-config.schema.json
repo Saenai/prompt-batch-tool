@@ -3,10 +3,10 @@
   "$id": "https://example.invalid/prompt-batch-tool/app-config.schema.json",
   "title": "Prompt Batch Generator application config",
   "type": "object",
-  "required": ["schema_version", "paths", "backend", "router", "runtime", "gpu_monitor"],
+  "required": ["schema_version", "paths", "backend", "router", "runtime", "gpu_monitor", "result_browser"],
   "properties": {
     "$schema": {"type": "string"},
-    "schema_version": {"const": 3},
+    "schema_version": {"const": 4},
     "app": {"type": "object"},
     "paths": {
       "type": "object",
@@ -56,10 +56,16 @@
     },
     "router": {
       "type": "object",
-      "required": ["arguments", "managed_process_names"],
+      "required": [
+        "arguments", "managed_process_names", "control_base_url",
+        "unload_all_endpoint", "control_timeout_seconds"
+      ],
       "properties": {
         "arguments": {"type": "array", "items": {"type": "string"}},
-        "managed_process_names": {"type": "array", "items": {"type": "string"}}
+        "managed_process_names": {"type": "array", "items": {"type": "string"}},
+        "control_base_url": {"type": "string", "minLength": 1},
+        "unload_all_endpoint": {"type": "string", "minLength": 1},
+        "control_timeout_seconds": {"type": "number", "exclusiveMinimum": 0}
       }
     },
     "runtime": {
@@ -78,6 +84,14 @@
         "poll_interval_ms": {"type": "integer", "minimum": 250, "maximum": 60000},
         "history_samples": {"type": "integer", "minimum": 10, "maximum": 600},
         "query_timeout_seconds": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "result_browser": {
+      "type": "object",
+      "required": ["max_entries"],
+      "properties": {
+        "max_entries": {"type": "integer", "minimum": 1, "maximum": 100}
       },
       "additionalProperties": false
     },

@@ -50,6 +50,8 @@ python .\batch_cli.py `
 - 模型列表由 API 或外部 llama-swap 配置动态发现，不写死在 GUI；
 - 模型按系列和参数量层级分组、筛选、折叠与批量选择；
 - 动态显示本机 NVIDIA GPU 的 VRAM、利用率、温度和短时占用曲线；
+- 通过 llama-swap 原生 API 一键卸载全部模型并释放显存；
+- 扫描当前输出根目录中的近期任务，直接打开聚合结果、摘要或任务目录；
 - profile 驱动模式、system prompt、请求参数、输出校验及观察项；
 - 逐项原子记录，支持断点续跑和仅重试失败项；
 - 原始响应、交付结果、汇总 Markdown、CSV 和 manifest 分离保存。
@@ -63,6 +65,7 @@ prompt_batch/               Python 包与业务实现
   backends/                 后端适配器
   gui.py                    主窗口与事件协调
   gui_models.py / gui_gpu.py 模型选择与 GPU 监视组件
+  gui_results.py             近期结果浏览组件
   cli.py                    命令行入口
   runner.py                 批次流程协调
   preparation.py            配置、输入与任务准备
@@ -94,6 +97,8 @@ packaging/windows/          Windows 便携包构建脚本
 所有配置路径相对于其配置文件解析，并支持 `~`、`%ENV_VAR%` 和 `${ENV_VAR}`。示例 `profiles/h3.json` 会引用仓库外的 MiniMax H3 system prompt；这是部署配置，不是 Python 源码中的本机路径。
 
 应用配置和 profile 均带版本号，并由程序执行运行时校验；`schemas/` 同时为编辑器提供 JSON Schema。
+
+新安装默认写入程序目录下的 `output/`。GUI 状态中已记住的输出路径仍优先于默认值，避免升级时擅自改动既有工作目录。
 
 ## 兼容性
 

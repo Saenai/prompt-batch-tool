@@ -44,6 +44,8 @@ GUI 和 CLI 分成两个 executable：GUI 使用 windowed subsystem，不弹出�
 - 新持久化格式：放入 `storage.py`，并考虑中断和原子性；
 - 新任务表单或运行状态呈现：放入 `gui.py`；模型选择行为放入 `gui_models.py`，业务规则仍由核心模块提供。
 - 新硬件遥测来源：采集与解析放在独立模块，Tk 呈现放在 `gui_*` 组件，不让主窗口直接解析命令输出。
+- 新 router 控制动作：HTTP 契约放入 `router_control.py`，GUI 只处理确认、线程和状态呈现。
+- 新结果入口：扫描规则放入 `result_catalog.py`，优先使用 manifest/profile 元数据，避免递归遍历全部逐项文件。
 
 ## 质量检查清单
 

@@ -1,6 +1,6 @@
 {
   "$schema": "../schemas/app-config.schema.json",
-  "schema_version": 3,
+  "schema_version": 4,
   "app": {
     "title": "Prompt Batch Generator"
   },
@@ -8,7 +8,7 @@
     "engine": "../batch_cli.py",
     "profiles": "../profiles",
     "state": "../state/gui-state.json",
-    "default_output_root": "../../generations/prompt-batches",
+    "default_output_root": "../output",
     "model_config": "../../llama-swap/config.yaml",
     "router_executable": "../../llama-swap/llama-swap.exe",
     "router_working_directory": "../../llama-swap",
@@ -36,7 +36,10 @@
     "managed_process_names": [
       "llama-swap",
       "llama-server"
-    ]
+    ],
+    "control_base_url": "http://127.0.0.1:8081",
+    "unload_all_endpoint": "/api/models/unload",
+    "control_timeout_seconds": 30
   },
   "runtime": {
     "version_arguments": [
@@ -49,6 +52,9 @@
     "poll_interval_ms": 1000,
     "history_samples": 60,
     "query_timeout_seconds": 5
+  },
+  "result_browser": {
+    "max_entries": 12
   },
   "model_source": {
     "fallback_format": "llama-swap-yaml",

@@ -41,7 +41,8 @@ class RepositoryQualityTests(unittest.TestCase):
             PROJECT_ROOT / "prompt_batch" / name
             for name in (
                 "config.py", "domain.py", "model_catalog.py", "preparation.py",
-                "reporting.py", "runner.py", "runtime.py", "storage.py",
+                "reporting.py", "result_catalog.py", "router_control.py",
+                "runner.py", "runtime.py", "storage.py",
             )
         ]
         core_paths.extend((PROJECT_ROOT / "prompt_batch" / "backends").glob("*.py"))
@@ -104,6 +105,11 @@ class RepositoryQualityTests(unittest.TestCase):
             text = (PROJECT_ROOT / name).read_text(encoding="utf-8")
             self.assertIn("README.en.md", text)
             self.assertIn("README.ja.md", text)
+
+    def test_distributed_config_defaults_to_application_output_directory(self) -> None:
+        config = json.loads((PROJECT_ROOT / "config" / "app.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["paths"]["default_output_root"], "../output")
+        self.assertEqual(config["router"]["unload_all_endpoint"], "/api/models/unload")
 
 
 if __name__ == "__main__":

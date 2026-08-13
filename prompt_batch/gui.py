@@ -11,10 +11,11 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-from .config import load_app_config, load_json, load_profile, resolve_config_paths
+from .config import expand_path, load_app_config, load_json, load_profile, resolve_config_paths
 from .gpu_monitor import query_nvidia_gpus
 from .gui_gpu import GpuMonitorPanel
 from .gui_models import ModelSelector
+from .gui_results import RecentResultsPanel
 from .model_catalog import (
     discover_models,
     group_model_families,
@@ -22,6 +23,7 @@ from .model_catalog import (
     parse_llama_swap_models,
 )
 from .runtime import terminate_process_tree
+from .router_control import unload_all_models
 from .storage import atomic_write_json
 
 
@@ -82,6 +84,8 @@ class PromptBatchApp:
         self.progress_detail_var = tk.StringVar(value="尚未开始")
         self.gpu_monitor_config = self.config["gpu_monitor"]
         self.gpu_poll_pending = False
+        self.unload_in_progress = False
+        self.result_refresh_after: str | None = None
         self.closing = False
 
         self.root.title(self.config.get("app", {}).get("title", "Prompt Batch Generator"))
@@ -94,6 +98,8 @@ class PromptBatchApp:
         self.root.after(80, self._drain_events)
         self.root.after(150, self.refresh_models)
         self.root.after(250, self._schedule_gpu_poll)
+        self.output_root_var.trace_add("write", lambda *_args: self._schedule_results_refresh())
+        self.root.after(350, self._refresh_results)
 
     @staticmethod
     def _load_profiles(directory: Path) -> dict[str, tuple[Path, dict]]:
@@ -196,12 +202,20 @@ class PromptBatchApp:
         self.direct_input = scrolledtext.ScrolledText(inputs, height=12, wrap="word", undo=True)
         self.direct_input.grid(row=3, column=0, sticky="nsew")
 
+        self.results_panel = RecentResultsPanel(
+            left,
+            max_entries=int(self.config["result_browser"]["max_entries"]),
+        )
+        self.results_panel.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+
         backend = ttk.LabelFrame(right, text="后端", padding=8)
         backend.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         backend.columnconfigure(1, weight=1)
         ttk.Label(backend, text="Base URL").grid(row=0, column=0, sticky="w")
         ttk.Entry(backend, textvariable=self.base_url_var).grid(row=0, column=1, sticky="ew", padx=8)
         ttk.Button(backend, text="刷新模型", command=self.refresh_models).grid(row=0, column=2, sticky="ew")
+        self.unload_button = ttk.Button(backend, text="卸载全部模型", command=self.unload_all)
+        self.unload_button.grid(row=0, column=3, sticky="ew", padx=(6, 0))
 
         models_area = ttk.LabelFrame(right, text="模型选择", padding=6)
         models_area.grid(row=1, column=0, sticky="nsew", pady=(0, 8))
@@ -295,6 +309,19 @@ class PromptBatchApp:
         if path:
             variable.set(path)
 
+    def _current_output_root(self) -> Path:
+        value = self.output_root_var.get().strip()
+        return expand_path(value, PROJECT_ROOT) if value else self.paths["default_output_root"]
+
+    def _schedule_results_refresh(self) -> None:
+        if self.result_refresh_after is not None:
+            self.root.after_cancel(self.result_refresh_after)
+        self.result_refresh_after = self.root.after(500, self._refresh_results)
+
+    def _refresh_results(self) -> None:
+        self.result_refresh_after = None
+        self.results_panel.refresh(self._current_output_root())
+
     def _add_input_files(self) -> None:
         paths = filedialog.askopenfilenames(title="添加输入文件", filetypes=(("Text", "*.txt *.md"), ("All files", "*.*")))
         existing = [line.strip() for line in self.input_files.get("1.0", "end-1c").splitlines() if line.strip()]
@@ -317,6 +344,32 @@ class PromptBatchApp:
 
         def worker() -> None:
             self.events.put(("models", discover_models(base_url, self.config["backend"], model_config, fallback_format)))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def unload_all(self) -> None:
+        if self.process is not None or self.unload_in_progress:
+            return
+        if not messagebox.askyesno(
+            "卸载全部模型",
+            "将通过 llama-swap 停止所有当前已加载模型并释放其显存。继续？",
+            parent=self.root,
+        ):
+            return
+        self.unload_in_progress = True
+        self.start_button.configure(state="disabled")
+        self.validate_button.configure(state="disabled")
+        self.unload_button.configure(state="disabled")
+        self.status_var.set("正在卸载模型")
+        self._append_log("\n> 请求 llama-swap 卸载全部模型。\n")
+
+        def worker() -> None:
+            try:
+                result = unload_all_models(self.config["router"], self.config["backend"].get("auth", {"type": "none"}))
+            except Exception as exc:
+                self.events.put(("unload_error", str(exc)))
+            else:
+                self.events.put(("unload_finished", result))
+
         threading.Thread(target=worker, daemon=True).start()
 
     def _schedule_gpu_poll(self) -> None:
@@ -430,6 +483,7 @@ class PromptBatchApp:
         self.progress_detail_var.set("正在准备批次")
         self.start_button.configure(state="disabled")
         self.validate_button.configure(state="disabled")
+        self.unload_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
 
         def worker() -> None:
@@ -522,6 +576,7 @@ class PromptBatchApp:
             self.progress_detail_var.set(
                 f"批次结束：执行 {payload.get('executed', 0)}，跳过 {payload.get('skipped', 0)}，失败 {payload.get('failures', 0)}"
             )
+            self.root.after(50, self._refresh_results)
         elif event_type == "validation_finished":
             self.progress.configure(maximum=1, value=1)
             self.progress_detail_var.set(
@@ -544,6 +599,23 @@ class PromptBatchApp:
                 elif event == "gpu_error":
                     self.gpu_panel.show_error(str(value))
                     self._queue_next_gpu_poll(after_error=True)
+                elif event == "unload_finished":
+                    self.unload_in_progress = False
+                    self.start_button.configure(state="normal")
+                    self.validate_button.configure(state="normal")
+                    self.unload_button.configure(state="normal")
+                    self.status_var.set("模型已卸载")
+                    response_text = getattr(value, "response_text", "")
+                    suffix = f"：{response_text}" if response_text else ""
+                    self._append_log(f"> llama-swap 已完成卸载{suffix}\n")
+                elif event == "unload_error":
+                    self.unload_in_progress = False
+                    self.start_button.configure(state="normal")
+                    self.validate_button.configure(state="normal")
+                    self.unload_button.configure(state="normal")
+                    self.status_var.set("卸载失败")
+                    self._append_log(f"! {value}\n")
+                    messagebox.showerror("卸载失败", str(value), parent=self.root)
                 elif event == "log":
                     self._append_log(str(value))
                 elif event == "engine":
@@ -557,6 +629,7 @@ class PromptBatchApp:
                     self.start_button.configure(state="normal")
                     self.validate_button.configure(state="normal")
                     self.cancel_button.configure(state="disabled")
+                    self.unload_button.configure(state="normal")
                     self.status_var.set("完成" if code == 0 else f"失败（exit {code}）")
                     self._append_log(f"\n> 进程结束，exit code {code}\n")
         except queue.Empty:

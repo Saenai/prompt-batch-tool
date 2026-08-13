@@ -12,7 +12,13 @@
 
 路径相对于 `app.json` 解析，也支持 `~`、`%ENV_VAR%` 与 `${ENV_VAR}`。部署相关路径应留在配置中，不能写入 Python 模块。
 
-应用配置当前为 `schema_version: 3`。程序可在内存中迁移 v1/v2 配置，但不会偷偷改写原文件；高于当前支持版本的配置会被拒绝。
+应用配置当前为 `schema_version: 4`。程序可在内存中迁移 v1–v3 配置，但不会偷偷改写原文件；高于当前支持版本的配置会被拒绝。
+
+默认输出根目录为相对于应用配置的 `../output`，即源码版或便携版程序根目录下的 `output/`。GUI 状态中已经保存的路径仍会覆盖该默认值。
+
+`router.control_base_url`、`router.unload_all_endpoint` 与 `router.control_timeout_seconds` 定义 llama-swap 控制 API。默认按钮调用 `POST /api/models/unload`；地址与超时不写死在 Python 中。若后端认证引用环境变量，控制请求复用相同认证头，但不会把密钥写入状态或日志。
+
+`result_browser.max_entries` 限制 GUI 展示的近期任务数。扫描只检查输出根目录的一级子目录，并优先读取 manifest 记录的聚合文件名，因此不会随逐项结果数量线性膨胀。
 
 ## GPU 监视
 

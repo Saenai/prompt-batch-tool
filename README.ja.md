@@ -52,6 +52,8 @@ python .\batch_cli.py `
 - API または外部 llama-swap 設定からモデルを動的に取得。
 - model family と parameter tier によるグループ化、絞り込み、折り畳み、一括選択。
 - ローカル NVIDIA GPU の VRAM、使用率、温度、短時間の履歴グラフを表示。
+- llama-swap の native control API で、読み込み済み model を一括 unload。
+- 現在の output root にある最近の task を走査し、aggregate result、summary、task directory を直接開く。
 - profile による mode、system prompt、リクエストパラメータ、検証、観測項目の定義。
 - リクエスト単位の原子的 record、resume、失敗項目のみの再試行。
 - raw response、納品用結果、集約 Markdown、CSV、manifest を分離保存。
@@ -65,6 +67,7 @@ prompt_batch/               Python package と実装
   backends/                 backend adapter
   gui.py                    メインウィンドウと event coordination
   gui_models.py / gui_gpu.py モデル選択と GPU monitor UI
+  gui_results.py             Recent result browser
   cli.py                    CLI entry point
   runner.py                 batch の進行管理
   preparation.py            設定と入力の準備
@@ -84,6 +87,8 @@ packaging/windows/          Windows ポータブル版 build script
 各 path は設定ファイルを基準に解決され、`~`、`%ENV_VAR%`、`${ENV_VAR}` を利用できます。H3 profile の例は repository 外部の MiniMax H3 system prompt を参照しますが、これは deployment 設定であり Python source の固定依存ではありません。
 
 アプリケーション設定と profile は version 管理され、実行時に検証されます。`schemas/` は editor 向け JSON Schema も提供します。
+
+新規環境の既定出力先は application directory 配下の `output/` です。GUI state に既存の出力 path が保存されている場合は、その値を優先し、upgrade 時に作業先を勝手に変更しません。
 
 ## 互換性
 

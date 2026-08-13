@@ -15,6 +15,8 @@
 - `main` 成功构建后自动更新的 `continuous` prerelease。
 - 本机多 NVIDIA GPU 的 VRAM、利用率、温度和短时历史可视化。
 - GUI EXE 可直接启动并默认读取同目录 `config/app.json`，不再依赖 launcher 传参。
+- llama-swap 原生 `POST /api/models/unload` 的“卸载全部模型”按钮。
+- 当前输出根目录的近期任务列表及聚合结果、摘要和目录直达操作。
 
 ### Changed
 
@@ -24,6 +26,7 @@
 - 模型选择器从主窗口控制器中拆为独立 GUI 组件；
 - GUI 与批处理运行时共用同一进程树终止实现；后端协议错误现在包含 endpoint 上下文。
 - `model_source` 公开术语调整为更明确的 `model_catalog`。
+- 新安装的默认输出根目录调整为程序目录下的 `output/`；既有 GUI 状态路径保持不变。
 
 ### Compatibility
 

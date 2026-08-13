@@ -52,6 +52,8 @@ Add `--validate-only` to validate configuration and inputs without starting the 
 - Discover models dynamically through the API or an external llama-swap configuration.
 - Group, filter, collapse, and select models by family and parameter tier.
 - Monitor local NVIDIA VRAM, GPU utilization, temperature, and short-term usage history.
+- Unload all active models through llama-swap's native control API.
+- Scan recent runs under the current output root and open aggregate results, summaries, or run folders directly.
 - Drive modes, system prompts, request parameters, validation, and observations through profiles.
 - Write atomic per-request records with resume and failed-only retry support.
 - Keep raw responses, deliverable results, aggregate Markdown, CSV, and manifests separate.
@@ -65,6 +67,7 @@ prompt_batch/               Python package and implementation
   backends/                 Backend adapters
   gui.py                    Main window and event coordination
   gui_models.py / gui_gpu.py Model selection and GPU monitoring
+  gui_results.py             Recent-result browser
   cli.py                    CLI entry point
   runner.py                 Batch orchestration
   preparation.py            Configuration and input preparation
@@ -84,6 +87,8 @@ packaging/windows/          Windows portable-package builder
 Paths are resolved relative to their configuration file and support `~`, `%ENV_VAR%`, and `${ENV_VAR}`. The example H3 profile refers to MiniMax H3 system prompts outside this repository; that path is deployment configuration, not a hard-coded Python dependency.
 
 Application configuration and profiles are versioned and validated at runtime. The `schemas/` directory also provides JSON Schema files for editors.
+
+Fresh installations write to `output/` under the application directory. A path already saved in GUI state continues to override this default so upgrades do not silently redirect existing work.
 
 ## Compatibility
 

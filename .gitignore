@@ -12,6 +12,7 @@ venv/
 *.log
 router-logs/
 outputs/
+output/
 artifacts/
 build/
 dist/

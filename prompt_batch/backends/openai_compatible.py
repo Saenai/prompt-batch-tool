@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
 from ..config import join_endpoint
+from .auth import request_headers
 
 
 class BackendResponseError(RuntimeError):
@@ -46,19 +46,7 @@ class OpenAICompatibleBackend:
         return join_endpoint(self.base_url, str(self.config["chat_endpoint"]))
 
     def _headers(self, content_type: bool = False) -> dict[str, str]:
-        headers = {"Accept": "application/json"}
-        if content_type:
-            headers["Content-Type"] = "application/json; charset=utf-8"
-        auth = self.config.get("auth", {"type": "none"})
-        if auth.get("type", "none") == "environment":
-            variable = str(auth["environment_variable"])
-            value = os.environ.get(variable)
-            if not value:
-                raise RuntimeError(f"Backend credential environment variable is not set: {variable}")
-            header = str(auth.get("header", "Authorization"))
-            prefix = str(auth.get("prefix", "Bearer "))
-            headers[header] = prefix + value
-        return headers
+        return request_headers(self.config.get("auth", {"type": "none"}), content_type=content_type)
 
     def get_models(self, timeout: float = 10) -> dict[str, Any]:
         request = urllib.request.Request(self.models_uri, headers=self._headers())

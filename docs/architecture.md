@@ -38,6 +38,9 @@
 | `gui_models.py` | 模型筛选、系列/参数量层级和选择状态 |
 | `gpu_monitor.py` | 无 GUI 依赖的 NVIDIA GPU 遥测采集与解析 |
 | `gui_gpu.py` | VRAM 当前值、设备选择和短时历史曲线 |
+| `router_control.py` | llama-swap 控制 API 客户端，不依赖 GUI |
+| `result_catalog.py` | 一级扫描运行目录、解析 manifest 和聚合结果位置 |
+| `gui_results.py` | 近期结果列表和系统默认应用打开动作 |
 | `cli.py` | 命令行参数和文本/JSONL 事件呈现 |
 | `engine.py` | 稳定公开 API 的兼容门面 |
 
@@ -48,6 +51,7 @@
 - `runner` 只负责协调，不复制配置准备、报表或后端协议实现；
 - GUI 不直接构造 HTTP 请求，也不解析 llama-swap 业务配置；
 - 主窗口通过 `ModelSelector` 的公开方法读取模型选择状态，不操作其内部控件；
+- 主窗口不直接构造 llama-swap 控制请求或猜测聚合输出文件名；
 - profile 不包含本机密钥，源码不包含模型清单或任务专用绝对路径；
 - 兼容模块只能转发公开名称，不承载新逻辑。
 

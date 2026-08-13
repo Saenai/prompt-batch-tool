@@ -2,19 +2,23 @@
 
 ## Windows 便携版
 
-CI artifact 和版本 Release 提供 Windows x64 便携 ZIP。解压后运行 `launch-gui.cmd`；包内包含 `PromptBatchGenerator.exe` 和供 GUI 调用的 `PromptBatchCLI.exe`，无需安装 Python。
+CI artifact 和版本 Release 提供 Windows x64 便携 ZIP。解压后可直接运行 `PromptBatchGenerator.exe`；`launch-gui.cmd` 继续作为兼容入口。包内另含供 GUI 调用的 `PromptBatchCLI.exe`，无需安装 Python。
 
 默认 `config/app.json` 假定该目录与 `llama-swap`、`llama-current` 处于既定的 `.llama.cpp` 结构。若移动到其他目录，应调整相对路径。每个发布 ZIP 都附带 `.sha256` 文件用于完整性核对。
 
 ## GUI
 
 ```powershell
-python .\app.py --config .\config\app.json
+python .\app.py
 ```
 
-界面固定为等宽两列。左侧包含任务设置和输入，右侧包含后端、模型选择和运行状态。具体区域使用带标题边框分隔，没有可拖动的中央分隔条。
+界面固定为等宽两列。左侧包含任务设置、输入和近期结果，右侧包含后端、模型选择、GPU 监视和运行状态。具体区域使用带标题边框分隔，没有可拖动的中央分隔条。
 
 GUI 会记住 profile、mode、路径、执行参数、模型选择、筛选、折叠状态和窗口大小。“直接输入”默认不持久化；只有勾选“记住正文”后才写入状态文件。
+
+“卸载全部模型”在批处理空闲时调用配置中的 llama-swap `POST /api/models/unload`。操作前会确认，批处理运行期间按钮禁用，避免终止正在生成的模型。
+
+“近期结果”只扫描当前输出根目录下的一级任务目录，读取 `manifest.json` 中的 `output_files`，并按最近更新时间排序。双击任务可打开聚合结果，也可分别打开摘要或任务目录；批次完成后列表自动刷新。较旧任务若 manifest 没有 `output_files`，会读取运行时冻结的 `input/profile.json`，不依赖固定的 `ALL-PROMPTS.md` 名称。
 
 ## 多输入
 
@@ -67,7 +71,7 @@ python .\batch_cli.py --help
   *.md / *.csv                   集中输出和摘要
 ```
 
-集中输出文件名由 profile 决定。逐项 `run-*.record.json` 使用原子替换写入，是续跑判断的事实来源。失败重试前会删除该项的旧结果，防止聚合阶段误收陈旧内容。
+集中输出文件名由 profile 决定。新安装的默认输出根目录是程序所在目录的 `output/`；GUI 已保存的路径仍优先。逐项 `run-*.record.json` 使用原子替换写入，是续跑判断的事实来源。失败重试前会删除该项的旧结果，防止聚合阶段误收陈旧内容。
 
 ## 本地 router
 
