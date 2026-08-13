@@ -185,7 +185,7 @@ jobs:
           EOF
           if gh release view continuous --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit continuous --repo "$GITHUB_REPOSITORY" \
-              --title 'Continuous build' --prerelease --notes-file release-notes.md
+              --target "$GITHUB_SHA" --title 'Continuous build' --prerelease --notes-file release-notes.md
             gh release upload continuous release-assets/*.zip release-assets/*.sha256 \
               --repo "$GITHUB_REPOSITORY" --clobber
           else

@@ -99,6 +99,7 @@ class RepositoryQualityTests(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
         self.assertIn("gh release upload continuous", workflow)
         self.assertIn("--clobber", workflow)
+        self.assertIn('--target "$GITHUB_SHA"', workflow)
 
     def test_three_readme_languages_are_present(self) -> None:
         for name in ("README.md", "README.en.md", "README.ja.md"):
