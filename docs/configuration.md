@@ -12,7 +12,23 @@
 
 路径相对于 `app.json` 解析，也支持 `~`、`%ENV_VAR%` 与 `${ENV_VAR}`。部署相关路径应留在配置中，不能写入 Python 模块。
 
-应用配置当前为 `schema_version: 2`。程序可在内存中迁移 v1 的 `backend.type`，但不会偷偷改写原文件；高于当前支持版本的配置会被拒绝。
+应用配置当前为 `schema_version: 3`。程序可在内存中迁移 v1/v2 配置，但不会偷偷改写原文件；高于当前支持版本的配置会被拒绝。
+
+## GPU 监视
+
+`gpu_monitor` 控制 GUI 中的本机 NVIDIA GPU 遥测：
+
+```json
+"gpu_monitor": {
+  "enabled": true,
+  "command": "nvidia-smi",
+  "poll_interval_ms": 1000,
+  "history_samples": 60,
+  "query_timeout_seconds": 5
+}
+```
+
+程序按配置周期调用 NVIDIA 驱动附带的 `nvidia-smi`，不会安装或要求 Python GPU 库。多张 NVIDIA GPU 会动态进入下拉框；命令不存在、驱动不可用或查询超时时，只停用监视显示，不影响批处理。将 `enabled` 改为 `false` 可完全关闭采样。
 
 ## 后端认证
 

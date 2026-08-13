@@ -87,13 +87,17 @@ class RepositoryQualityTests(unittest.TestCase):
         self.assertIn("python -B -m unittest discover -s tests -v", workflow)
         self.assertIn("runs-on: windows-latest", workflow)
 
-    def test_ci_builds_artifacts_and_publishes_version_tags(self) -> None:
+    def test_ci_builds_artifacts_and_publishes_versioned_and_continuous_releases(self) -> None:
         workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         self.assertIn("package-windows:", workflow)
         self.assertIn("actions/upload-artifact@v7", workflow)
         self.assertIn("actions/download-artifact@v8", workflow)
         self.assertIn("startsWith(github.ref, 'refs/tags/v')", workflow)
         self.assertIn("gh release create", workflow)
+        self.assertIn("continuous-release:", workflow)
+        self.assertIn("github.ref == 'refs/heads/main'", workflow)
+        self.assertIn("gh release upload continuous", workflow)
+        self.assertIn("--clobber", workflow)
 
     def test_three_readme_languages_are_present(self) -> None:
         for name in ("README.md", "README.en.md", "README.ja.md"):

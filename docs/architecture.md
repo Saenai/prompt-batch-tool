@@ -36,6 +36,8 @@
 | `storage.py` | 原子 JSON、可选记录读取和 CSV 写入 |
 | `gui.py` | 主窗口、任务表单和子进程事件协调 |
 | `gui_models.py` | 模型筛选、系列/参数量层级和选择状态 |
+| `gpu_monitor.py` | 无 GUI 依赖的 NVIDIA GPU 遥测采集与解析 |
+| `gui_gpu.py` | VRAM 当前值、设备选择和短时历史曲线 |
 | `cli.py` | 命令行参数和文本/JSONL 事件呈现 |
 | `engine.py` | 稳定公开 API 的兼容门面 |
 

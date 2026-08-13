@@ -12,6 +12,9 @@
 - 分层中文文档和统一命名约定。
 - Windows/Python 3.11 与 3.14 持续集成，以及传输超时、无效 JSON、模型缺失、部分失败和进程终止测试。
 - Windows x64 便携 ZIP、CI artifact、`v*` tag 自动 Release，以及中英日三语 README。
+- `main` 成功构建后自动更新的 `continuous` prerelease。
+- 本机多 NVIDIA GPU 的 VRAM、利用率、温度和短时历史可视化。
+- GUI EXE 可直接启动并默认读取同目录 `config/app.json`，不再依赖 launcher 传参。
 
 ### Changed
 

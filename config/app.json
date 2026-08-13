@@ -1,6 +1,6 @@
 {
   "$schema": "../schemas/app-config.schema.json",
-  "schema_version": 2,
+  "schema_version": 3,
   "app": {
     "title": "Prompt Batch Generator"
   },
@@ -42,6 +42,13 @@
     "version_arguments": [
       "--version"
     ]
+  },
+  "gpu_monitor": {
+    "enabled": true,
+    "command": "nvidia-smi",
+    "poll_interval_ms": 1000,
+    "history_samples": 60,
+    "query_timeout_seconds": 5
   },
   "model_source": {
     "fallback_format": "llama-swap-yaml",

@@ -12,6 +12,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from .config import load_app_config, load_json, load_profile, resolve_config_paths
+from .gpu_monitor import query_nvidia_gpus
+from .gui_gpu import GpuMonitorPanel
 from .gui_models import ModelSelector
 from .model_catalog import (
     discover_models,
@@ -41,6 +43,10 @@ def engine_command(engine_path: Path) -> list[str]:
     if engine_path.suffix.casefold() in {".py", ".pyw"}:
         return [sys.executable, "-B", str(engine_path)]
     return [str(engine_path)]
+
+
+def default_config_path() -> Path:
+    return PROJECT_ROOT / "config" / "app.json"
 
 
 class PromptBatchApp:
@@ -74,6 +80,9 @@ class PromptBatchApp:
         self.run_strategy_var = tk.StringVar(value=RUN_STRATEGY_LABELS.get(strategy_key, RUN_STRATEGY_LABELS["new"]))
         self.status_var = tk.StringVar(value="就绪")
         self.progress_detail_var = tk.StringVar(value="尚未开始")
+        self.gpu_monitor_config = self.config["gpu_monitor"]
+        self.gpu_poll_pending = False
+        self.closing = False
 
         self.root.title(self.config.get("app", {}).get("title", "Prompt Batch Generator"))
         self.root.geometry(self.state.get("geometry", "1280x820"))
@@ -84,6 +93,7 @@ class PromptBatchApp:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(80, self._drain_events)
         self.root.after(150, self.refresh_models)
+        self.root.after(250, self._schedule_gpu_poll)
 
     @staticmethod
     def _load_profiles(directory: Path) -> dict[str, tuple[Path, dict]]:
@@ -122,7 +132,7 @@ class PromptBatchApp:
         left.rowconfigure(1, weight=1)
         right.columnconfigure(0, weight=1)
         right.rowconfigure(1, weight=3)
-        right.rowconfigure(2, weight=2)
+        right.rowconfigure(3, weight=2)
 
         settings = ttk.LabelFrame(left, text="任务设置", padding=8)
         settings.grid(row=0, column=0, sticky="ew", pady=(0, 8))
@@ -208,8 +218,18 @@ class PromptBatchApp:
         )
         self.model_selector.grid(row=0, column=0, sticky="nsew")
 
+        selected_gpu = self.state.get("selected_gpu_index")
+        self.gpu_panel = GpuMonitorPanel(
+            right,
+            history_samples=int(self.gpu_monitor_config["history_samples"]),
+            selected_index=int(selected_gpu) if isinstance(selected_gpu, int) and not isinstance(selected_gpu, bool) else None,
+        )
+        self.gpu_panel.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        if not self.gpu_monitor_config["enabled"]:
+            self.gpu_panel.set_disabled()
+
         run_area = ttk.LabelFrame(right, text="运行状态", padding=8)
-        run_area.grid(row=2, column=0, sticky="nsew")
+        run_area.grid(row=3, column=0, sticky="nsew")
         run_area.columnconfigure(0, weight=1)
         run_area.rowconfigure(3, weight=1)
         actions = ttk.Frame(run_area)
@@ -298,6 +318,32 @@ class PromptBatchApp:
         def worker() -> None:
             self.events.put(("models", discover_models(base_url, self.config["backend"], model_config, fallback_format)))
         threading.Thread(target=worker, daemon=True).start()
+
+    def _schedule_gpu_poll(self) -> None:
+        if self.closing or self.gpu_poll_pending or not self.gpu_monitor_config["enabled"]:
+            return
+        self.gpu_poll_pending = True
+
+        def worker() -> None:
+            try:
+                snapshots = query_nvidia_gpus(
+                    str(self.gpu_monitor_config["command"]),
+                    float(self.gpu_monitor_config["query_timeout_seconds"]),
+                )
+            except Exception as exc:
+                self.events.put(("gpu_error", str(exc)))
+            else:
+                self.events.put(("gpu_snapshots", snapshots))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _queue_next_gpu_poll(self, *, after_error: bool = False) -> None:
+        self.gpu_poll_pending = False
+        interval = int(self.gpu_monitor_config["poll_interval_ms"])
+        if after_error:
+            interval = max(interval, 5000)
+        if not self.closing:
+            self.root.after(interval, self._schedule_gpu_poll)
 
     @staticmethod
     def _positive_int(value: str, label: str) -> int:
@@ -427,7 +473,8 @@ class PromptBatchApp:
                  "max_tokens": self._positive_int(self.max_tokens_var.get(), "Max tokens"), "seed_base": self._positive_int(self.seed_base_var.get(), "Seed base"),
                  "run_strategy": RUN_STRATEGY_KEYS.get(self.run_strategy_var.get(), "new"),
                  "base_url": self.base_url_var.get().strip(), "input_files": [line.strip() for line in self.input_files.get("1.0", "end-1c").splitlines() if line.strip()],
-                 "remember_direct_input": self.remember_direct_var.get(), "direct_input": direct}
+                 "remember_direct_input": self.remember_direct_var.get(), "direct_input": direct,
+                 "selected_gpu_index": self.gpu_panel.selected_index()}
         state.update(self.model_selector.state_payload())
         atomic_write_json(self.paths["state"], state)
 
@@ -491,6 +538,12 @@ class PromptBatchApp:
                 event, value = self.events.get_nowait()
                 if event == "models":
                     self.model_selector.load_models(*value)
+                elif event == "gpu_snapshots":
+                    self.gpu_panel.update_snapshots(value)
+                    self._queue_next_gpu_poll()
+                elif event == "gpu_error":
+                    self.gpu_panel.show_error(str(value))
+                    self._queue_next_gpu_poll(after_error=True)
                 elif event == "log":
                     self._append_log(str(value))
                 elif event == "engine":
@@ -520,6 +573,7 @@ class PromptBatchApp:
         except Exception as exc:
             if not messagebox.askyesno("状态保存失败", f"{exc}\n\n仍然关闭？", parent=self.root):
                 return
+        self.closing = True
         self._cleanup_manifest()
         self.root.destroy()
 
@@ -540,6 +594,7 @@ def self_test(config_path: Path) -> int:
                                 "parameter_tiers": [{"key": tier.key, "label": tier.label, "count": len(tier.models)}
                                                     for tier in group_parameter_tiers(list(group.models), tiering)]}
                                for group in groups],
+              "gpu_monitor_enabled": config["gpu_monitor"]["enabled"],
               "state_path": str(paths["state"]), "python": sys.executable, "tk_version": tk.TkVersion}
     if sys.stdout is not None:
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -548,7 +603,7 @@ def self_test(config_path: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True)
+    parser.add_argument("--config", default=str(default_config_path()))
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     config_path = Path(args.config).resolve()

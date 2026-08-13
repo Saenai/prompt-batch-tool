@@ -10,16 +10,16 @@ The source version uses only the Python standard library. The GUI is built with 
 
 CI builds a Windows x64 portable ZIP for every commit. It contains the GUI executable, CLI executable, default configuration, profiles, schemas, and documentation, and does not require a separate Python installation.
 
-Download the artifact from the corresponding GitHub Actions run. Pushing a `v*` tag automatically publishes the same ZIP and its SHA-256 checksum to [GitHub Releases](https://github.com/Saenai/prompt-batch-tool/releases).
+A successful `main` build automatically updates the rolling [Continuous prerelease](https://github.com/Saenai/prompt-batch-tool/releases/tag/continuous). Pushing a `v*` tag publishes an immutable versioned release. Both include the portable ZIP and its SHA-256 checksum.
 
-Extract the archive and run `launch-gui.cmd`. The default paths assume this folder is installed as `.llama.cpp/prompt-batch-tool`, next to `llama-swap` and `llama-current`; edit `config/app.json` for other layouts.
+Extract the archive and run `PromptBatchGenerator.exe` directly; `launch-gui.cmd` remains as a compatibility launcher. The default paths assume this folder is installed as `.llama.cpp/prompt-batch-tool`, next to `llama-swap` and `llama-current`; edit `config/app.json` for other layouts.
 
 ## Quick start from source
 
 Double-click `launch-gui.cmd`, or run from the repository root:
 
 ```powershell
-python .\app.py --config .\config\app.json
+python .\app.py
 ```
 
 Run self-checks and tests:
@@ -51,6 +51,7 @@ Add `--validate-only` to validate configuration and inputs without starting the 
 - Finish all inputs for one model before switching models, reducing llama-swap reloads.
 - Discover models dynamically through the API or an external llama-swap configuration.
 - Group, filter, collapse, and select models by family and parameter tier.
+- Monitor local NVIDIA VRAM, GPU utilization, temperature, and short-term usage history.
 - Drive modes, system prompts, request parameters, validation, and observations through profiles.
 - Write atomic per-request records with resume and failed-only retry support.
 - Keep raw responses, deliverable results, aggregate Markdown, CSV, and manifests separate.
@@ -62,7 +63,8 @@ Add `--validate-only` to validate configuration and inputs without starting the 
 app.py / batch_cli.py       Stable compatibility launchers
 prompt_batch/               Python package and implementation
   backends/                 Backend adapters
-  gui.py / gui_models.py    Main window and model selector
+  gui.py                    Main window and event coordination
+  gui_models.py / gui_gpu.py Model selection and GPU monitoring
   cli.py                    CLI entry point
   runner.py                 Batch orchestration
   preparation.py            Configuration and input preparation
@@ -74,7 +76,7 @@ schemas/                    JSON Schema documents
 docs/                       Maintenance documentation (Chinese)
 tests/                      Standard-library test suite
 packaging/windows/          Windows portable-package builder
-.github/workflows/          CI, artifacts, and tagged releases
+.github/workflows/          CI, continuous, and versioned releases
 ```
 
 ## Configuration

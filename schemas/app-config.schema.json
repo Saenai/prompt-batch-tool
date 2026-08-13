@@ -3,10 +3,10 @@
   "$id": "https://example.invalid/prompt-batch-tool/app-config.schema.json",
   "title": "Prompt Batch Generator application config",
   "type": "object",
-  "required": ["schema_version", "paths", "backend", "router", "runtime"],
+  "required": ["schema_version", "paths", "backend", "router", "runtime", "gpu_monitor"],
   "properties": {
     "$schema": {"type": "string"},
-    "schema_version": {"const": 2},
+    "schema_version": {"const": 3},
     "app": {"type": "object"},
     "paths": {
       "type": "object",
@@ -68,6 +68,18 @@
       "properties": {
         "version_arguments": {"type": "array", "items": {"type": "string"}}
       }
+    },
+    "gpu_monitor": {
+      "type": "object",
+      "required": ["enabled", "command", "poll_interval_ms", "history_samples", "query_timeout_seconds"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "command": {"type": "string", "minLength": 1},
+        "poll_interval_ms": {"type": "integer", "minimum": 250, "maximum": 60000},
+        "history_samples": {"type": "integer", "minimum": 10, "maximum": 600},
+        "query_timeout_seconds": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
     },
     "model_source": {"type": "object"},
     "defaults": {"type": "object"}

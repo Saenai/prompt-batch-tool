@@ -10,16 +10,16 @@ OpenAI 互換 Chat Completions API 向けのローカル一括生成ツールで
 
 CI は各 commit に対して Windows x64 用ポータブル ZIP を生成します。GUI、CLI、既定設定、profile、schema、文書を同梱しているため、Python を別途インストールする必要はありません。
 
-対応する GitHub Actions run の artifact から取得できます。`v*` tag を push すると、同じ ZIP と SHA-256 チェックサムが [GitHub Releases](https://github.com/Saenai/prompt-batch-tool/releases) に自動公開されます。
+`main` の build が成功すると、rolling [Continuous prerelease](https://github.com/Saenai/prompt-batch-tool/releases/tag/continuous) が自動更新されます。`v*` tag を push した場合は変更されない versioned release を公開します。どちらにも ZIP と SHA-256 checksum が含まれます。
 
-展開後、`launch-gui.cmd` を実行してください。既定パスは `.llama.cpp/prompt-batch-tool` に配置し、隣接する `llama-swap` と `llama-current` を利用する構成です。別の配置では `config/app.json` を編集します。
+展開後は `PromptBatchGenerator.exe` を直接実行できます。`launch-gui.cmd` は互換 launcher として残しています。既定パスは `.llama.cpp/prompt-batch-tool` に配置し、隣接する `llama-swap` と `llama-current` を利用する構成です。別の配置では `config/app.json` を編集します。
 
 ## ソース版のクイックスタート
 
 `launch-gui.cmd` をダブルクリックするか、repository root で次を実行します。
 
 ```powershell
-python .\app.py --config .\config\app.json
+python .\app.py
 ```
 
 自己診断とテスト：
@@ -51,6 +51,7 @@ python .\batch_cli.py `
 - 一つのモデルで全入力を処理してから切り替え、llama-swap の再ロードを削減。
 - API または外部 llama-swap 設定からモデルを動的に取得。
 - model family と parameter tier によるグループ化、絞り込み、折り畳み、一括選択。
+- ローカル NVIDIA GPU の VRAM、使用率、温度、短時間の履歴グラフを表示。
 - profile による mode、system prompt、リクエストパラメータ、検証、観測項目の定義。
 - リクエスト単位の原子的 record、resume、失敗項目のみの再試行。
 - raw response、納品用結果、集約 Markdown、CSV、manifest を分離保存。
@@ -62,7 +63,8 @@ python .\batch_cli.py `
 app.py / batch_cli.py       安定した互換 launcher
 prompt_batch/               Python package と実装
   backends/                 backend adapter
-  gui.py / gui_models.py    メインウィンドウとモデル選択 UI
+  gui.py                    メインウィンドウと event coordination
+  gui_models.py / gui_gpu.py モデル選択と GPU monitor UI
   cli.py                    CLI entry point
   runner.py                 batch の進行管理
   preparation.py            設定と入力の準備
@@ -74,7 +76,7 @@ schemas/                    JSON Schema
 docs/                       保守文書（中国語）
 tests/                      標準ライブラリによる test suite
 packaging/windows/          Windows ポータブル版 build script
-.github/workflows/          CI、artifact、tag release
+.github/workflows/          CI、continuous release、versioned release
 ```
 
 ## 設定

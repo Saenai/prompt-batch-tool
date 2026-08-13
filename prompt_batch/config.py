@@ -7,8 +7,15 @@ from pathlib import Path
 from typing import Any
 
 
-APP_CONFIG_VERSION = 2
+APP_CONFIG_VERSION = 3
 PROFILE_VERSION = 1
+GPU_MONITOR_DEFAULTS = {
+    "enabled": True,
+    "command": "nvidia-smi",
+    "poll_interval_ms": 1000,
+    "history_samples": 60,
+    "query_timeout_seconds": 5,
+}
 
 
 class ConfigValidationError(ValueError):
@@ -57,9 +64,13 @@ def migrate_app_config(payload: dict[str, Any]) -> dict[str, Any]:
         backend.setdefault("adapter", adapter)
         backend.setdefault("auth", {"type": "none"})
         migrated["schema_version"] = 2
+        version = 2
+    if version == 2:
+        migrated.setdefault("gpu_monitor", deepcopy(GPU_MONITOR_DEFAULTS))
+        migrated["schema_version"] = 3
     elif version != APP_CONFIG_VERSION:
         raise ConfigValidationError(
-            f"Unsupported app config schema_version {version}; expected 1 or {APP_CONFIG_VERSION}"
+            f"Unsupported app config schema_version {version}; expected 1, 2, or {APP_CONFIG_VERSION}"
         )
     return migrated
 
@@ -100,6 +111,22 @@ def validate_app_config(config: dict[str, Any]) -> None:
     _string_list(_required(router, "managed_process_names", "router"), "router.managed_process_names")
     runtime = _mapping(_required(config, "runtime", "app config"), "runtime")
     _string_list(_required(runtime, "version_arguments", "runtime"), "runtime.version_arguments")
+
+    gpu_monitor = _mapping(_required(config, "gpu_monitor", "app config"), "gpu_monitor")
+    enabled = _required(gpu_monitor, "enabled", "gpu_monitor")
+    if not isinstance(enabled, bool):
+        raise ConfigValidationError("gpu_monitor.enabled must be a boolean")
+    _string(_required(gpu_monitor, "command", "gpu_monitor"), "gpu_monitor.command")
+    for key, minimum, maximum in (
+        ("poll_interval_ms", 250, 60_000),
+        ("history_samples", 10, 600),
+    ):
+        value = _required(gpu_monitor, key, "gpu_monitor")
+        if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
+            raise ConfigValidationError(f"gpu_monitor.{key} must be an integer from {minimum} to {maximum}")
+    timeout = _required(gpu_monitor, "query_timeout_seconds", "gpu_monitor")
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
+        raise ConfigValidationError("gpu_monitor.query_timeout_seconds must be a positive number")
 
 
 def load_app_config(path: Path) -> dict[str, Any]:

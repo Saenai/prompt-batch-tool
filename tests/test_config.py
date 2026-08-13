@@ -36,16 +36,36 @@ def app_config_v1() -> dict:
 
 
 class ConfigTests(unittest.TestCase):
-    def test_v1_app_config_migrates_to_v2_in_memory(self) -> None:
+    def test_v1_app_config_migrates_to_v3_in_memory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "app.json"
             path.write_text(json.dumps(app_config_v1()), encoding="utf-8")
             config = load_app_config(path)
 
-        self.assertEqual(config["schema_version"], 2)
+        self.assertEqual(config["schema_version"], 3)
         self.assertEqual(config["backend"]["adapter"], "openai-chat-completions")
         self.assertNotIn("type", config["backend"])
         self.assertEqual(config["backend"]["auth"], {"type": "none"})
+        self.assertEqual(config["gpu_monitor"]["command"], "nvidia-smi")
+        self.assertEqual(config["gpu_monitor"]["history_samples"], 60)
+
+    def test_gpu_monitor_poll_interval_is_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "app.json"
+            payload = app_config_v1()
+            payload["schema_version"] = 2
+            payload["backend"]["adapter"] = payload["backend"].pop("type")
+            payload["backend"]["auth"] = {"type": "none"}
+            payload["gpu_monitor"] = {
+                "enabled": True,
+                "command": "nvidia-smi",
+                "poll_interval_ms": 10,
+                "history_samples": 60,
+                "query_timeout_seconds": 5,
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ConfigValidationError, "poll_interval_ms"):
+                load_app_config(path)
 
     def test_future_app_config_version_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

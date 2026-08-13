@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
+
 jobs:
   test:
     name: Windows / Python ${{ matrix.python-version }}
@@ -78,6 +82,8 @@ jobs:
         run: |
           $version = if ('${{ github.ref_type }}' -eq 'tag') {
             '${{ github.ref_name }}'
+          } elseif ('${{ github.ref }}' -eq 'refs/heads/main') {
+            'continuous'
           } else {
             '${{ github.sha }}'.Substring(0, 7)
           }
@@ -135,3 +141,55 @@ jobs:
           --verify-tag
           --generate-notes
           --title "$GITHUB_REF_NAME"
+
+  continuous-release:
+    name: Publish continuous release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: package-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: PromptBatchGenerator-windows-x64
+          path: release-assets
+
+      - name: Move continuous tag to this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/continuous" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/continuous" \
+              -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref='refs/tags/continuous' -f sha="$GITHUB_SHA" >/dev/null
+          fi
+
+      - name: Create or update continuous prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          cat > release-notes.md <<EOF
+          Automatically published from the latest successful build of \`main\`.
+
+          Commit: \`$GITHUB_SHA\`
+          Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          This is a rolling prerelease. Use a versioned \`v*\` release when reproducibility matters.
+          EOF
+          if gh release view continuous --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit continuous --repo "$GITHUB_REPOSITORY" \
+              --title 'Continuous build' --prerelease --notes-file release-notes.md
+            gh release upload continuous release-assets/*.zip release-assets/*.sha256 \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create continuous release-assets/*.zip release-assets/*.sha256 \
+              --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+              --title 'Continuous build' --notes-file release-notes.md
+          fi

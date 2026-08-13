@@ -20,7 +20,9 @@ python .\batch_cli.py --help
 
 工作流依次执行源码编译、完整单元测试、GUI 模块导入、CLI 帮助和 PowerShell wrapper 语法解析。应用依赖 Python 标准库，因此 CI 不应出现安装第三方运行时依赖的步骤。
 
-测试通过后，`package-windows` 使用固定版本的 PyInstaller 构建两个单文件 executable，并将配置、profile、schema 和文档组合成便携 ZIP。普通运行保留 14 天 artifact；`v*` tag 触发独立的 release job，将 ZIP 和 SHA-256 文件发布到 GitHub Releases。只有 release job 获得 `contents: write`，测试和打包保持只读权限。
+测试通过后，`package-windows` 使用固定版本的 PyInstaller 构建两个单文件 executable，并将配置、profile、schema 和文档组合成便携 ZIP。普通运行保留 14 天 artifact；`main` push 会更新 `continuous` rolling prerelease，`v*` tag 则创建不可变的正式 Release。只有两个发布 job 获得 `contents: write`，测试和打包保持只读权限。
+
+`continuous` 标签刻意指向最近一次通过打包与冒烟测试的 `main` 提交，资产使用固定名称并以 `--clobber` 原子替换。它适合日常取用，不应作为可复现版本依据；需要长期引用时发布 `v*` tag。
 
 当前 action 使用 `actions/checkout@v7`、`actions/setup-python@v6`、`actions/upload-artifact@v7` 与 `actions/download-artifact@v8`。升级 action 或 PyInstaller 版本时应先查阅官方 release notes，再更新这里、工作流和仓库质量测试。
 
@@ -41,6 +43,7 @@ GUI 和 CLI 分成两个 executable：GUI 使用 windowed subsystem，不弹出�
 - 新报表：放入 `reporting.py`，不要增加 runner 的格式化职责；
 - 新持久化格式：放入 `storage.py`，并考虑中断和原子性；
 - 新任务表单或运行状态呈现：放入 `gui.py`；模型选择行为放入 `gui_models.py`，业务规则仍由核心模块提供。
+- 新硬件遥测来源：采集与解析放在独立模块，Tk 呈现放在 `gui_*` 组件，不让主窗口直接解析命令输出。
 
 ## 质量检查清单
 
