@@ -1,11 +1,29 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
-from prompt_batch.model_catalog import group_parameter_tiers, group_model_families
+from prompt_batch.model_catalog import group_parameter_tiers, group_model_families, parse_llama_swap_models
 
 
 class ModelGroupingTests(unittest.TestCase):
+    def test_parses_sorted_config_directory_fragments(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "20-b.yaml").write_text(
+                'models:\n  model-b:\n    name: "Model B"\n    cmd: run-b\n', encoding="utf-8"
+            )
+            (root / "10-a.yml").write_text(
+                "models:\n  model-a:\n    name: 'Model A'\n    cmd: run-a\n", encoding="utf-8"
+            )
+            (root / "ignored.txt").write_text("models:\n  ignored:\n", encoding="utf-8")
+
+            self.assertEqual(
+                parse_llama_swap_models(root),
+                {"model-a": "Model A", "model-b": "Model B"},
+            )
+
     def test_groups_by_configured_capture_and_respects_order(self) -> None:
         models = [
             ("other-7b-q4", "Other"),

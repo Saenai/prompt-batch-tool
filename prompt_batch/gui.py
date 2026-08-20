@@ -662,7 +662,7 @@ def self_test(config_path: Path) -> int:
     result = {"config": str(config_path), "engine_exists": paths["engine"].is_file(), "profiles": list(profiles),
               "app_schema_version": config["schema_version"], "backend_adapter": config["backend"]["adapter"],
               "profile_schema_versions": {profile_id: payload["schema_version"] for profile_id, (_path, payload) in profiles.items()},
-              "model_config_exists": paths["model_config"].is_file(), "config_model_count": len(models),
+              "model_config_exists": paths["model_config"].exists(), "config_model_count": len(models),
               "model_groups": [{"key": group.key, "label": group.label, "count": len(group.models),
                                 "parameter_tiers": [{"key": tier.key, "label": tier.label, "count": len(tier.models)}
                                                     for tier in group_parameter_tiers(list(group.models), tiering)]}

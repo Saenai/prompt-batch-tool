@@ -24,29 +24,37 @@ class ParameterTier:
 
 def parse_llama_swap_models(path: Path) -> dict[str, str]:
     models: dict[str, str] = {}
-    if not path.is_file():
+    if path.is_dir():
+        config_paths = sorted(
+            (candidate for candidate in path.iterdir() if candidate.suffix.casefold() in {".yml", ".yaml"}),
+            key=lambda candidate: candidate.name.casefold(),
+        )
+    elif path.is_file():
+        config_paths = [path]
+    else:
         return models
-    in_models = False
-    current_id: str | None = None
-    for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
-        if not in_models:
-            if raw_line.strip() == "models:" and not raw_line.startswith((" ", "\t")):
-                in_models = True
-            continue
-        if raw_line and not raw_line.startswith((" ", "\t", "#")):
-            break
-        model_match = re.match(r"^  ([^\s:#][^:]*):\s*(?:#.*)?$", raw_line)
-        if model_match:
-            current_id = model_match.group(1).strip().strip('"\'')
-            models[current_id] = current_id
-            continue
-        name_match = re.match(r"^    name:\s*(.*?)\s*$", raw_line)
-        if current_id and name_match:
-            value = name_match.group(1).strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                value = value[1:-1]
-            if value:
-                models[current_id] = value
+    for config_path in config_paths:
+        in_models = False
+        current_id: str | None = None
+        for raw_line in config_path.read_text(encoding="utf-8-sig").splitlines():
+            if not in_models:
+                if raw_line.strip() == "models:" and not raw_line.startswith((" ", "\t")):
+                    in_models = True
+                continue
+            if raw_line and not raw_line.startswith((" ", "\t", "#")):
+                break
+            model_match = re.match(r"^  ([^\s:#][^:]*):\s*(?:#.*)?$", raw_line)
+            if model_match:
+                current_id = model_match.group(1).strip().strip('"\'')
+                models[current_id] = current_id
+                continue
+            name_match = re.match(r"^    name:\s*(.*?)\s*$", raw_line)
+            if current_id and name_match:
+                value = name_match.group(1).strip()
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                    value = value[1:-1]
+                if value:
+                    models[current_id] = value
     return models
 
 

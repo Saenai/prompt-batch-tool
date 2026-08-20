@@ -9,7 +9,7 @@
     "profiles": "../profiles",
     "state": "../state/gui-state.json",
     "default_output_root": "../output",
-    "model_config": "../../llama-swap/config.yaml",
+    "model_config": "../../llama-swap/config.d",
     "router_executable": "../../llama-swap/llama-swap.exe",
     "router_working_directory": "../../llama-swap",
     "runtime_executable": "../../llama-current/llama-server.exe"
@@ -30,6 +30,8 @@
     "arguments": [
       "--config",
       "config.yaml",
+      "--config-dir",
+      "config.d",
       "--listen",
       "127.0.0.1:8081"
     ],
