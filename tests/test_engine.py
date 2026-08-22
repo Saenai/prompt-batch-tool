@@ -207,6 +207,22 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(manifest["models"], ["model:off"])
         self.assertIn("# Model: model:off", (run_dir / "ALL.md").read_text(encoding="utf-8"))
 
+    def test_html_aggregate_is_multiline_and_optional_reports_are_omitted(self) -> None:
+        profile = json.loads(self.profile_path.read_text(encoding="utf-8"))
+        profile["output"] = {
+            "aggregate_title": "HTML Outputs",
+            "all_outputs_file": "ALL-PROMPTS.html",
+        }
+        self.profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        run_dir = run_batch(self.options(), log=lambda _message: None)
+
+        html = (run_dir / "ALL-PROMPTS.html").read_text(encoding="utf-8")
+        self.assertIn("<th>Model</th><th>Repeat</th><th>Prompt</th>", html)
+        self.assertIn("<pre>result: TOKEN\nmodel=model-a seed=41</pre>", html)
+        self.assertFalse((run_dir / "RAW.md").exists())
+        self.assertFalse((run_dir / "RECORDS.csv").exists())
+        self.assertFalse((run_dir / "SUMMARY.md").exists())
+
     def test_resume_skips_successful_items(self) -> None:
         run_batch(self.options(), log=lambda _message: None)
         events: list[dict] = []

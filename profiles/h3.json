@@ -87,11 +87,6 @@
   "output": {
     "run_prefix": "h3-prompts",
     "aggregate_title": "MiniMax H3 Final Prompts",
-    "summary_title": "H3 Prompt Generation Summary",
-    "all_outputs_file": "ALL-PROMPTS.md",
-    "raw_outputs_file": "ALL-PROMPTS-RAW.md",
-    "records_file": "GENERATION-RECORDS.csv",
-    "observations_file": "TRIGGER-CHECK.csv",
-    "summary_file": "GENERATION-SUMMARY.md"
+    "all_outputs_file": "ALL-PROMPTS.html"
   }
 }

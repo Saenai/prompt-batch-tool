@@ -68,10 +68,10 @@ python .\batch_cli.py --help
   raw/<model>/<input>/           API 响应、错误和逐项 record
   router-logs/                   本次启动的本地 router 日志
   manifest.json                  批次身份、状态和统计
-  *.md / *.csv                   集中输出和摘要
+  profile 声明的集中输出文件       例如 ALL-PROMPTS.html
 ```
 
-集中输出文件名由 profile 决定。新安装的默认输出根目录是程序所在目录的 `output/`；GUI 已保存的路径仍优先。逐项 `run-*.record.json` 使用原子替换写入，是续跑判断的事实来源。失败重试前会删除该项的旧结果，防止聚合阶段误收陈旧内容。
+集中输出文件名和格式由 profile 决定；未声明的集中报告不会生成。H3 profile 默认只生成 `ALL-PROMPTS.html`，以 Model、Repeat、Prompt 三列展示最终 prompt。新安装的默认输出根目录是程序所在目录的 `output/`；GUI 已保存的路径仍优先。逐项 `run-*.record.json` 使用原子替换写入，是续跑判断的事实来源。失败重试前会删除该项的旧结果，防止聚合阶段误收陈旧内容。
 
 ## 本地 router
 

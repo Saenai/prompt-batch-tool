@@ -81,11 +81,13 @@
     }
   },
   "observations": [],
-  "output": {"all_outputs_file": "ALL-OUTPUTS.md"}
+  "output": {"all_outputs_file": "ALL-OUTPUTS.html"}
 }
 ```
 
 system prompt 路径相对于 `system_prompt_root`；未声明 root 时相对于 profile 文件。短文本可使用 `system_prompt_text`。GUI 中临时指定的 system prompt 会覆盖 profile 对应 mode 的值。
+
+`output` 中只会生成显式声明的集中报告文件；文件名以 `.html` 结尾时，聚合结果会以保留多行文本的 HTML 表格写出。未声明的 records、raw、observations 和 summary 文件不会额外生成。
 
 应用配置、profile 和 mode 均可声明 `request_body`，按“应用 → profile → mode”合并。当前模型、messages、max tokens、seed 和 `stream: false` 最后由执行器写入。
 
