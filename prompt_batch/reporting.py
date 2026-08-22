@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .domain import PreparedBatch
-from .storage import write_csv
+from .storage import safe_path_component, write_csv
 
 
 RECORD_FIELDS = [
@@ -76,8 +76,9 @@ def write_batch_reports(
             raw_lines.extend([f"## Input: {case.case_id} [{case.mode}]", ""])
             for repeat in range(1, options.repeats + 1):
                 name = f"run-{repeat:02d}.md"
-                final_path = final_dir / model_id / case.case_id / name
-                result_path = result_dir / model_id / case.case_id / name
+                model_directory = safe_path_component(model_id)
+                final_path = final_dir / model_directory / case.case_id / name
+                result_path = result_dir / model_directory / case.case_id / name
                 final_content = final_path.read_text(encoding="utf-8").strip() if final_path.is_file() else "[MISSING RESULT]"
                 raw_content = result_path.read_text(encoding="utf-8").strip() if result_path.is_file() else "[MISSING RESULT]"
                 final_lines.extend([f"### Result {repeat:02d}", "", "```text", final_content, "```", ""])

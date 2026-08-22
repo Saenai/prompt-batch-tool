@@ -195,6 +195,18 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(manifest["status"], "completed")
         self.assertEqual(len(list((run_dir / "raw").rglob("*.record.json"))), 8)
 
+    def test_model_ids_with_windows_special_characters_use_safe_output_directories(self) -> None:
+        MockApiHandler.models = ["model:off"]
+        options = self.options()
+        options.model_ids = ["model:off"]
+        run_dir = run_batch(options, log=lambda _message: None)
+
+        output = run_dir / "results" / "model~003Aoff" / "one" / "run-01.md"
+        self.assertTrue(output.is_file())
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["models"], ["model:off"])
+        self.assertIn("# Model: model:off", (run_dir / "ALL.md").read_text(encoding="utf-8"))
+
     def test_resume_skips_successful_items(self) -> None:
         run_batch(self.options(), log=lambda _message: None)
         events: list[dict] = []

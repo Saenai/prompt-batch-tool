@@ -13,7 +13,7 @@ from .domain import BatchOptions, EventFunction, LogFunction, PreparedBatch, Val
 from .preparation import prepare_batch, profile_fingerprint, validate_batch
 from .reporting import is_valid_output, write_batch_reports
 from .runtime import runtime_version, start_router, terminate_process_tree
-from .storage import atomic_write_json, load_optional_json
+from .storage import atomic_write_json, load_optional_json, safe_path_component
 
 
 def _emit(event: EventFunction | None, event_type: str, **payload: Any) -> None:
@@ -124,7 +124,7 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
         for repeat in range(1, options.repeats + 1):
             stem = f"run-{repeat:02d}"
             for case in prepared.cases:
-                record = load_optional_json(raw_dir / model_id / case.case_id / f"{stem}.record.json")
+                record = load_optional_json(raw_dir / safe_path_component(model_id) / case.case_id / f"{stem}.record.json")
                 if record is not None:
                     existing_records[(model_id, case.case_id, repeat)] = record
     if options.retry_failed_only and len(existing_records) != total_requested:
@@ -219,9 +219,10 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
             for repeat in range(1, options.repeats + 1):
                 seed = options.seed_base + repeat
                 for case in prepared.cases:
-                    case_result = result_dir / model_id / case.case_id
-                    case_final = final_dir / model_id / case.case_id
-                    case_raw = raw_dir / model_id / case.case_id
+                    model_directory = safe_path_component(model_id)
+                    case_result = result_dir / model_directory / case.case_id
+                    case_final = final_dir / model_directory / case.case_id
+                    case_raw = raw_dir / model_directory / case.case_id
                     for directory in (case_result, case_final, case_raw):
                         directory.mkdir(parents=True, exist_ok=True)
                     stem = f"run-{repeat:02d}"
