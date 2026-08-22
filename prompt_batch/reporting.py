@@ -56,9 +56,10 @@ def _render_markdown_aggregate(title: str, profile: dict[str, Any], run_dir: Pat
 
 def _render_html_aggregate(title: str, profile: dict[str, Any], rows: list[tuple[str, int, str]]) -> str:
     body = []
-    for model_id, repeat, content in rows:
+    for sequence, (model_id, repeat, content) in enumerate(rows, start=1):
         body.append(
             "<tr>"
+            f"<td class=\"sequence\">{sequence}</td>"
             f"<td>{escape(model_id)}</td>"
             f"<td>{repeat}</td>"
             f"<td class=\"prompt\"><pre>{escape(content)}</pre></td>"
@@ -76,8 +77,9 @@ body {{ margin: 1.5rem; font-family: system-ui, sans-serif; }}
 table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
 th, td {{ border: 1px solid #8888; padding: .55rem .7rem; vertical-align: top; text-align: left; }}
 th {{ position: sticky; top: 0; background: Canvas; z-index: 1; }}
-th:nth-child(1), td:nth-child(1) {{ width: 21%; overflow-wrap: anywhere; }}
-th:nth-child(2), td:nth-child(2) {{ width: 5rem; text-align: center; }}
+th:nth-child(1), td:nth-child(1) {{ width: 3.5rem; text-align: center; }}
+th:nth-child(2), td:nth-child(2) {{ width: 21%; overflow-wrap: anywhere; }}
+th:nth-child(3), td:nth-child(3) {{ width: 5rem; text-align: center; }}
 td.prompt pre {{ margin: 0; max-height: 32rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }}
 </style>
 </head>
@@ -85,7 +87,7 @@ td.prompt pre {{ margin: 0; max-height: 32rem; overflow: auto; white-space: pre-
 <h1>{title}</h1>
 <p>Profile: {profile}</p>
 <table>
-<thead><tr><th>Model</th><th>Repeat</th><th>Prompt</th></tr></thead>
+<thead><tr><th>#</th><th>Model</th><th>Repeat</th><th>Prompt</th></tr></thead>
 <tbody>
 {rows}
 </tbody>

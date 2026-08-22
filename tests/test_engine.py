@@ -217,7 +217,9 @@ class EngineTests(unittest.TestCase):
         run_dir = run_batch(self.options(), log=lambda _message: None)
 
         html = (run_dir / "ALL-PROMPTS.html").read_text(encoding="utf-8")
-        self.assertIn("<th>Model</th><th>Repeat</th><th>Prompt</th>", html)
+        self.assertIn("<th>#</th><th>Model</th><th>Repeat</th><th>Prompt</th>", html)
+        self.assertIn('<td class="sequence">1</td>', html)
+        self.assertIn('<td class="sequence">2</td>', html)
         self.assertIn("<pre>result: TOKEN\nmodel=model-a seed=41</pre>", html)
         self.assertFalse((run_dir / "RAW.md").exists())
         self.assertFalse((run_dir / "RECORDS.csv").exists())
