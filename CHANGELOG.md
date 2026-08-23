@@ -17,6 +17,7 @@
 - GUI EXE 可直接启动并默认读取同目录 `config/app.json`，不再依赖 launcher 传参。
 - llama-swap 原生 `POST /api/models/unload` 的“卸载全部模型”按钮。
 - 当前输出根目录的近期任务列表及聚合结果、摘要和目录直达操作。
+- 新运行默认启用随机 seed，并在 manifest 中保存实际 seed base；续跑时保持原 seed。
 
 ### Changed
 

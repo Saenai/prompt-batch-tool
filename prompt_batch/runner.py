@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import shutil
 import subprocess
 import time
@@ -14,6 +15,9 @@ from .preparation import prepare_batch, profile_fingerprint, validate_batch
 from .reporting import is_valid_output, write_batch_reports
 from .runtime import runtime_version, start_router, terminate_process_tree
 from .storage import atomic_write_json, load_optional_json, safe_path_component
+
+
+MAX_SEED = 2_147_483_647
 
 
 def _emit(event: EventFunction | None, event_type: str, **payload: Any) -> None:
@@ -93,9 +97,19 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
         if not run_dir.is_dir() or not manifest_path.is_file():
             raise ValueError(f"Resume requires an existing run directory with manifest.json: {run_dir}")
         existing_manifest = load_json(manifest_path)
-        _validate_resume_manifest(existing_manifest, prepared)
     elif run_dir.exists() and any(run_dir.iterdir()):
         raise ValueError(f"Run directory is not empty; choose resume or another directory: {run_dir}")
+    if options.repeats >= MAX_SEED:
+        raise ValueError("Repeats leave no room for an Int32 seed range.")
+    if existing_manifest is not None and isinstance(existing_manifest.get("seed_base"), int):
+        # A resumed run must keep its original random seed.
+        options.seed_base = int(existing_manifest["seed_base"])
+    elif options.random_seed:
+        options.seed_base = secrets.randbelow(MAX_SEED - options.repeats) + 1
+    if options.seed_base < 1 or options.seed_base > MAX_SEED - options.repeats:
+        raise ValueError("Seed base must leave room for every repeat within Int32 range.")
+    if existing_manifest is not None:
+        _validate_resume_manifest(existing_manifest, prepared)
     input_dir = run_dir / "input"
     system_dir = input_dir / "system-prompts"
     result_dir = run_dir / "results"
@@ -181,6 +195,7 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
         "resume_count": int((existing_manifest or {}).get("resume_count", 0)) + (1 if resume_requested else 0),
         "max_tokens": options.max_tokens,
         "seed_base": options.seed_base,
+        "random_seed": options.random_seed,
         "request_order": "model -> repeat -> input",
         "router_started_by_script": False,
         "runtime_version": runtime_version(prepared),

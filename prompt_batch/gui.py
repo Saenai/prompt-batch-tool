@@ -76,6 +76,7 @@ class PromptBatchApp:
         self.repeats_var = tk.StringVar(value=str(self.state.get("repeats", defaults.get("repeats", 1))))
         self.max_tokens_var = tk.StringVar(value=str(self.state.get("max_tokens", defaults.get("max_tokens", 2048))))
         self.seed_base_var = tk.StringVar(value=str(self.state.get("seed_base", defaults.get("seed_base", 1))))
+        self.random_seed_var = tk.BooleanVar(value=bool(self.state.get("random_seed", defaults.get("random_seed", True))))
         self.base_url_var = tk.StringVar(value=self.state.get("base_url", self.config["backend"]["base_url"]))
         self.remember_direct_var = tk.BooleanVar(value=bool(self.state.get("remember_direct_input", defaults.get("remember_direct_input", False))))
         strategy_key = str(self.state.get("run_strategy", "new"))
@@ -92,6 +93,7 @@ class PromptBatchApp:
         self.root.geometry(self.state.get("geometry", "1280x820"))
         self.root.minsize(1050, 680)
         self._build_ui()
+        self._update_seed_controls()
         self._restore_inputs()
         self._apply_profile_modes()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -170,15 +172,18 @@ class PromptBatchApp:
         ttk.Label(params, text="Max tokens").grid(row=1, column=0, sticky="w")
         ttk.Entry(params, textvariable=self.max_tokens_var, width=10).grid(row=1, column=1, sticky="ew", padx=(5, 14), pady=2)
         ttk.Label(params, text="Seed base").grid(row=1, column=2, sticky="w")
-        ttk.Entry(params, textvariable=self.seed_base_var, width=12).grid(row=1, column=3, sticky="ew", padx=(5, 0), pady=2)
-        ttk.Label(params, text="运行策略").grid(row=2, column=0, sticky="w")
+        self.seed_base_entry = ttk.Entry(params, textvariable=self.seed_base_var, width=12)
+        self.seed_base_entry.grid(row=1, column=3, sticky="ew", padx=(5, 0), pady=2)
+        ttk.Checkbutton(params, text="新运行使用随机 seed", variable=self.random_seed_var,
+                        command=self._update_seed_controls).grid(row=2, column=0, columnspan=4, sticky="w", pady=2)
+        ttk.Label(params, text="运行策略").grid(row=3, column=0, sticky="w")
         self.run_strategy_combo = ttk.Combobox(
             params,
             textvariable=self.run_strategy_var,
             values=list(RUN_STRATEGY_LABELS.values()),
             state="readonly",
         )
-        self.run_strategy_combo.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(5, 0), pady=2)
+        self.run_strategy_combo.grid(row=3, column=1, columnspan=3, sticky="ew", padx=(5, 0), pady=2)
         row += 1
 
         inputs = ttk.LabelFrame(left, text="输入内容", padding=8)
@@ -433,22 +438,31 @@ class PromptBatchApp:
         finally:
             handle.close()
 
+    def _update_seed_controls(self) -> None:
+        self.seed_base_entry.configure(state="disabled" if self.random_seed_var.get() else "normal")
+
     def _build_command(self, validate_only: bool) -> list[str]:
         selected = self.model_selector.selected_ids()
         if not selected:
             raise ValueError("至少选择一个模型")
         repeats = self._positive_int(self.repeats_var.get().strip(), "Repeats")
         max_tokens = self._positive_int(self.max_tokens_var.get().strip(), "Max tokens")
-        seed_base = self._positive_int(self.seed_base_var.get().strip(), "Seed base")
-        if seed_base > 2_147_483_647 - repeats:
-            raise ValueError("Seed base 超出 Int32 范围")
+        seed_base: int | None = None
+        if not self.random_seed_var.get():
+            seed_base = self._positive_int(self.seed_base_var.get().strip(), "Seed base")
+            if seed_base > 2_147_483_647 - repeats:
+                raise ValueError("Seed base 超出 Int32 范围")
         self.temp_manifest = self._create_manifest()
         profile_path = self.profiles[self.profile_var.get()][0]
         command = [*engine_command(self.paths["engine"]),
                    "--app-config", str(self.config_path), "--profile", str(profile_path),
                    "--input-manifest", str(self.temp_manifest), "--mode", self.mode_var.get(),
                    "--base-url", self.base_url_var.get().strip(), "--repeats", str(repeats), "--max-tokens", str(max_tokens),
-                   "--seed-base", str(seed_base), "--event-format", "jsonl"]
+                   "--event-format", "jsonl"]
+        if self.random_seed_var.get():
+            command.append("--random-seed")
+        else:
+            command.extend(("--no-random-seed", "--seed-base", str(seed_base)))
         for model_id in selected:
             command.extend(("--model", model_id))
         for flag, value in (("--output-root", self.output_root_var.get().strip()), ("--run-directory", self.run_directory_var.get().strip()),
@@ -525,6 +539,7 @@ class PromptBatchApp:
                  "output_root": self.output_root_var.get().strip(), "run_directory": self.run_directory_var.get().strip(),
                  "system_prompt": self.system_prompt_var.get().strip(), "repeats": self._positive_int(self.repeats_var.get(), "Repeats"),
                  "max_tokens": self._positive_int(self.max_tokens_var.get(), "Max tokens"), "seed_base": self._positive_int(self.seed_base_var.get(), "Seed base"),
+                 "random_seed": self.random_seed_var.get(),
                  "run_strategy": RUN_STRATEGY_KEYS.get(self.run_strategy_var.get(), "new"),
                  "base_url": self.base_url_var.get().strip(), "input_files": [line.strip() for line in self.input_files.get("1.0", "end-1c").splitlines() if line.strip()],
                  "remember_direct_input": self.remember_direct_var.get(), "direct_input": direct,

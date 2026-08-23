@@ -96,7 +96,14 @@
       "additionalProperties": false
     },
     "model_source": {"type": "object"},
-    "defaults": {"type": "object"}
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "seed_base": {"type": "integer", "minimum": 1},
+        "random_seed": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    }
   },
   "additionalProperties": true
 }

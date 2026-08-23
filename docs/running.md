@@ -48,6 +48,16 @@ python .\batch_cli.py --help
 
 `--validate-only` 只做配置和输入准备。`--event-format jsonl` 输出 GUI 可消费的结构化事件；普通命令行默认输出可读文本。
 
+### Seed
+
+新运行默认启用随机 seed。工具先生成一个随机 `seed_base`，然后使用 `seed_base + repeat` 作为请求 seed；同一批次中不同模型和相同 repeat 仍使用相同 seed，便于横向比较。实际使用的 seed base 会写入 `manifest.json`。
+
+- `--random-seed`：强制本次新运行随机化；
+- `--no-random-seed --seed-base N`：使用固定 seed base；
+- 两个选项都省略：遵循 `config/app.json` 的 `defaults.random_seed`；若显式给出 `--seed-base N`，则视为固定 seed。
+
+续跑会读取原 manifest 中的 seed base，不会因为随机 seed 默认开启而改变已完成任务的请求身份。
+
 ## 运行策略
 
 - `新运行`：创建新目录；指定固定目录时要求它为空；

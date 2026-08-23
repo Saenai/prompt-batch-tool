@@ -158,6 +158,7 @@ class EngineTests(unittest.TestCase):
             max_tokens=100,
             seed_base=40,
             model_ids=["model-a", "model-b"],
+            random_seed=False,
             run_directory=self.root / "run",
         )
 
@@ -194,6 +195,23 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(manifest["failures"], [])
         self.assertEqual(manifest["status"], "completed")
         self.assertEqual(len(list((run_dir / "raw").rglob("*.record.json"))), 8)
+
+    def test_random_seed_is_generated_once_and_saved_for_resume(self) -> None:
+        options = self.options()
+        options.random_seed = True
+        with patch("prompt_batch.runner.secrets.randbelow", return_value=1233) as random_seed:
+            run_dir = run_batch(options, log=lambda _message: None)
+
+        random_seed.assert_called_once()
+        self.assertEqual(sorted({request["seed"] for request in MockApiHandler.requests}), [1235, 1236])
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+        self.assertTrue(manifest["random_seed"])
+        self.assertEqual(manifest["seed_base"], 1234)
+
+        options.resume = True
+        with patch("prompt_batch.runner.secrets.randbelow", side_effect=AssertionError("resume must not randomize")):
+            run_batch(options, log=lambda _message: None)
+        self.assertEqual(sorted({request["seed"] for request in MockApiHandler.requests}), [1235, 1236])
 
     def test_model_ids_with_windows_special_characters_use_safe_output_directories(self) -> None:
         MockApiHandler.models = ["model:off"]

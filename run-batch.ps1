@@ -11,8 +11,10 @@ param(
     [string]$RunDirectory = '',
     [Parameter(Mandatory = $true)] [int]$Repeats,
     [Parameter(Mandatory = $true)] [int]$MaxTokens,
-    [Parameter(Mandatory = $true)] [int]$SeedBase,
+    [Nullable[int]]$SeedBase = $null,
     [Parameter(Mandatory = $true)] [string]$ModelIdsCsv,
+    [switch]$RandomSeed,
+    [switch]$NoRandomSeed,
     [switch]$ValidateOnly,
     [switch]$Resume,
     [switch]$RetryFailed
@@ -37,9 +39,18 @@ $arguments = @(
     '--input-manifest', $InputManifestPath,
     '--mode', $Mode,
     '--repeats', [string]$Repeats,
-    '--max-tokens', [string]$MaxTokens,
-    '--seed-base', [string]$SeedBase
+    '--max-tokens', [string]$MaxTokens
 )
+if ($RandomSeed -and $NoRandomSeed) { throw 'RandomSeed and NoRandomSeed are mutually exclusive.' }
+if ($RandomSeed -and $null -ne $SeedBase) { throw 'SeedBase cannot be combined with RandomSeed.' }
+if ($RandomSeed) {
+    $arguments += '--random-seed'
+} elseif ($NoRandomSeed) {
+    $arguments += '--no-random-seed'
+    if ($null -ne $SeedBase) { $arguments += '--seed-base', [string]$SeedBase }
+} elseif ($null -ne $SeedBase) {
+    $arguments += '--seed-base', [string]$SeedBase
+}
 foreach ($modelId in @($ModelIdsCsv -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
     $arguments += '--model', $modelId
 }

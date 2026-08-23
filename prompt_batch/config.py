@@ -80,6 +80,10 @@ def migrate_app_config(payload: dict[str, Any]) -> dict[str, Any]:
         raise ConfigValidationError(
             f"Unsupported app config schema_version {version}; expected 1 through {APP_CONFIG_VERSION}"
         )
+    defaults = migrated.setdefault("defaults", {})
+    if not isinstance(defaults, dict):
+        raise ConfigValidationError("app config.defaults must be an object")
+    defaults.setdefault("random_seed", True)
     return migrated
 
 
@@ -145,6 +149,14 @@ def validate_app_config(config: dict[str, Any]) -> None:
     max_entries = _required(result_browser, "max_entries", "result_browser")
     if not isinstance(max_entries, int) or isinstance(max_entries, bool) or not 1 <= max_entries <= 100:
         raise ConfigValidationError("result_browser.max_entries must be an integer from 1 to 100")
+
+    defaults = _mapping(config.get("defaults", {}), "defaults")
+    random_seed = defaults.get("random_seed", True)
+    if not isinstance(random_seed, bool):
+        raise ConfigValidationError("defaults.random_seed must be a boolean")
+    seed_base = defaults.get("seed_base", 1)
+    if not isinstance(seed_base, int) or isinstance(seed_base, bool) or seed_base < 1:
+        raise ConfigValidationError("defaults.seed_base must be a positive integer")
 
 
 def load_app_config(path: Path) -> dict[str, Any]:

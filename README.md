@@ -37,9 +37,11 @@ python .\batch_cli.py `
   --mode default `
   --repeats 2 `
   --max-tokens 2048 `
-  --seed-base 100 `
+  --random-seed `
   --model model-a
 ```
+
+默认新运行使用随机 seed；同一批次仍使用同一个随机基准 seed，并按 repeat 递增。需要固定结果时使用 `--no-random-seed --seed-base 100`。省略两者时遵循 `config/app.json` 的 `defaults.random_seed`。
 
 加入 `--validate-only` 可只校验任务，不启动 router 或发送请求。
 

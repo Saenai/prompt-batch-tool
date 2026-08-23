@@ -39,9 +39,11 @@ python .\batch_cli.py `
   --mode default `
   --repeats 2 `
   --max-tokens 2048 `
-  --seed-base 100 `
+  --random-seed `
   --model model-a
 ```
+
+New runs use a random seed by default. Each run keeps one random seed base and increments it by repeat, so comparisons within that run remain controlled. Use `--no-random-seed --seed-base 100` for reproducible fixed seeds. Omitting both flags follows `defaults.random_seed` in `config/app.json`.
 
 Add `--validate-only` to validate configuration and inputs without starting the router or sending requests.
 

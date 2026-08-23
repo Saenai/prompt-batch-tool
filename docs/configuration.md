@@ -8,7 +8,7 @@
 - `backend`：adapter、Base URL、endpoint、超时、认证和公共请求字段；
 - `router` / `runtime`：本地进程参数与版本查询方式；
 - `model_source`：模型发现回退和 GUI 分组；
-- `defaults`：GUI 的默认 profile、mode、重复次数、token 上限和 seed。
+- `defaults`：GUI 的默认 profile、mode、重复次数、token 上限、seed base 和随机 seed 开关。`random_seed` 默认应为 `true`；`seed_base` 仅在关闭随机 seed 时作为固定基准。
 
 路径相对于 `app.json` 解析，也支持 `~`、`%ENV_VAR%` 与 `${ENV_VAR}`。部署相关路径应留在配置中，不能写入 Python 模块。
 

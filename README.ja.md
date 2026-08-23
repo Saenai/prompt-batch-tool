@@ -39,9 +39,11 @@ python .\batch_cli.py `
   --mode default `
   --repeats 2 `
   --max-tokens 2048 `
-  --seed-base 100 `
+  --random-seed `
   --model model-a
 ```
+
+新しい実行では既定でランダム seed を使用します。同じ batch 内では一つのランダムな seed base を使い、repeat ごとに加算するため、同一実行内の比較条件は維持されます。再現可能な固定 seed が必要な場合は `--no-random-seed --seed-base 100` を指定してください。両方を省略した場合は `config/app.json` の `defaults.random_seed` に従います。
 
 `--validate-only` を追加すると、router の起動や API リクエストを行わず、設定と入力だけを検証できます。
 

@@ -19,6 +19,7 @@ class BatchOptions:
     max_tokens: int
     seed_base: int
     model_ids: list[str]
+    random_seed: bool = True
     system_prompt_path: Path | None = None
     base_url: str | None = None
     output_root: Path | None = None

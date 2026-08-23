@@ -97,6 +97,7 @@
     "repeats": 3,
     "max_tokens": 8192,
     "seed_base": 1,
+    "random_seed": true,
     "remember_direct_input": false
   }
 }
