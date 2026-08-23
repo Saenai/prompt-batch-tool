@@ -95,7 +95,7 @@
     "profile": "h3",
     "mode": "auto",
     "repeats": 3,
-    "max_tokens": 8192,
+    "max_tokens": 16384,
     "seed_base": 1,
     "random_seed": true,
     "remember_direct_input": false

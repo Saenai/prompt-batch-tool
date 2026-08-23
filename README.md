@@ -36,7 +36,7 @@ python .\batch_cli.py `
   --input-manifest .\inputs.json `
   --mode default `
   --repeats 2 `
-  --max-tokens 2048 `
+  --max-tokens 16384 `
   --random-seed `
   --model model-a
 ```

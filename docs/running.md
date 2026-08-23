@@ -46,7 +46,7 @@ python .\batch_cli.py --help
 .\PromptBatchCLI.exe --help
 ```
 
-`--validate-only` 只做配置和输入准备。`--event-format jsonl` 输出 GUI 可消费的结构化事件；普通命令行默认输出可读文本。
+`--validate-only` 只做配置和输入准备。`--event-format jsonl` 输出 GUI 可消费的结构化事件；普通命令行默认输出可读文本。新配置的默认 `max_tokens` 为 `16384`，用于给 thinking 留出足够的生成余量；遇到特别长的推理仍可在 GUI 或 CLI 中手动提高。
 
 ### Seed
 
