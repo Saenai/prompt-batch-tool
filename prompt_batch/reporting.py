@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from html import escape
 from pathlib import Path
@@ -101,6 +102,14 @@ td.prompt pre {{ margin: 0; max-height: 32rem; overflow: auto; white-space: pre-
     )
 
 
+def _render_jsonl_prompts(rows: list[dict[str, Any]]) -> str:
+    """Render final prompts as one self-contained JSON object per line."""
+    return "\n".join(
+        json.dumps(row, ensure_ascii=False, separators=(",", ":"))
+        for row in rows
+    ) + ("\n" if rows else "")
+
+
 def write_batch_reports(
     run_dir: Path,
     prepared: PreparedBatch,
@@ -115,7 +124,8 @@ def write_batch_reports(
         key: str(value)
         for key, config_key in (
             ("records", "records_file"), ("observations", "observations_file"),
-            ("all", "all_outputs_file"), ("raw", "raw_outputs_file"), ("summary", "summary_file"),
+            ("all", "all_outputs_file"), ("raw", "raw_outputs_file"),
+            ("structured", "structured_outputs_file"), ("summary", "summary_file"),
         )
         if (value := output_config.get(config_key))
     }
@@ -127,6 +137,8 @@ def write_batch_reports(
     title = str(output_config.get("aggregate_title", "Prompt Batch Outputs"))
     final_rows: list[tuple[str, int, str]] = []
     raw_rows: list[tuple[str, int, str]] = []
+    structured_rows: list[dict[str, Any]] = []
+    sequence = 0
     for model_id in options.model_ids:
         for case in prepared.cases:
             for repeat in range(1, options.repeats + 1):
@@ -138,6 +150,16 @@ def write_batch_reports(
                 raw_content = result_path.read_text(encoding="utf-8").strip() if result_path.is_file() else "[MISSING RESULT]"
                 final_rows.append((model_id, repeat, final_content))
                 raw_rows.append((model_id, repeat, raw_content))
+                if final_path.is_file():
+                    sequence += 1
+                    structured_rows.append({
+                        "sequence": sequence,
+                        "model": model_id,
+                        "repeat": repeat,
+                        "input": case.case_id,
+                        "mode": case.mode,
+                        "prompt": final_content,
+                    })
     for key, rows, report_title in (("all", final_rows, title), ("raw", raw_rows, f"{title} - Raw")):
         if key not in files:
             continue
@@ -146,6 +168,10 @@ def write_batch_reports(
             path.write_text(_render_html_aggregate(report_title, profile, rows), encoding="utf-8")
         else:
             path.write_text(_render_markdown_aggregate(report_title, profile, run_dir, rows), encoding="utf-8")
+    if "structured" in files:
+        (run_dir / files["structured"]).write_text(
+            _render_jsonl_prompts(structured_rows), encoding="utf-8"
+        )
 
     denominator = len(prepared.cases) * options.repeats
     if "summary" in files:

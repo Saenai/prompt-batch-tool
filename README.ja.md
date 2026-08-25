@@ -58,7 +58,7 @@ python .\batch_cli.py `
 - 現在の output root にある最近の task を走査し、aggregate result、summary、task directory を直接開く。
 - profile による mode、system prompt、リクエストパラメータ、検証、観測項目の定義。
 - リクエスト単位の原子的 record、resume、失敗項目のみの再試行。
-- raw response、納品用結果、集約 Markdown、CSV、manifest を分離保存。
+- raw response、納品用結果、profile が宣言した集約レポート（HTML、JSONL など）、manifest を分離保存。
 - Windows CI で core、GUI import、CLI、配布 package、互換 wrapper を検証。
 
 ## Repository 構成

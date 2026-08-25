@@ -78,10 +78,16 @@ python .\batch_cli.py --help
   raw/<model>/<input>/           API 响应、错误和逐项 record
   router-logs/                   本次启动的本地 router 日志
   manifest.json                  批次身份、状态和统计
-  profile 声明的集中输出文件       例如 ALL-PROMPTS.html
+  profile 声明的集中输出文件       例如 ALL-PROMPTS.html、prompts.jsonl
 ```
 
-集中输出文件名和格式由 profile 决定；未声明的集中报告不会生成。H3 profile 默认只生成 `ALL-PROMPTS.html`，以序号、Model、Repeat、Prompt 四列展示最终 prompt。新安装的默认输出根目录是程序所在目录的 `output/`；GUI 已保存的路径仍优先。逐项 `run-*.record.json` 使用原子替换写入，是续跑判断的事实来源。失败重试前会删除该项的旧结果，防止聚合阶段误收陈旧内容。
+集中输出文件名和格式由 profile 决定；未声明的集中报告不会生成。H3 profile 默认生成 `ALL-PROMPTS.html` 和 `prompts.jsonl`：前者以序号、Model、Repeat、Prompt 四列供人工查看，后者每行写入一个包含 `sequence`、`model`、`repeat`、`input`、`mode` 和 `prompt` 的 JSON 对象，适合下游自动化。JSONL 只包含实际存在的最终结果，不会把失败项写成 `[MISSING RESULT]`。新安装的默认输出根目录是程序所在目录的 `output/`；GUI 已保存的路径仍优先。逐项 `run-*.record.json` 使用原子替换写入，是续跑判断的事实来源。失败重试前会删除该项的旧结果，防止聚合阶段误收陈旧内容。
+
+旧任务若没有 `prompts.jsonl`，可以从已完成的 `final-results` 重新导出：
+
+```powershell
+python .\scripts\export-prompts-jsonl.py --run-dir .\output\<run-directory>
+```
 
 ## 本地 router
 

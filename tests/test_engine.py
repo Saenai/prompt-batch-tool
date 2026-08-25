@@ -134,6 +134,7 @@ class EngineTests(unittest.TestCase):
                 "raw_outputs_file": "RAW.md",
                 "records_file": "RECORDS.csv",
                 "observations_file": "OBSERVATIONS.csv",
+                "structured_outputs_file": "PROMPTS.jsonl",
                 "summary_file": "SUMMARY.md",
             },
         }), encoding="utf-8")
@@ -188,8 +189,16 @@ class EngineTests(unittest.TestCase):
         self.assertIn('"TOKEN"', raw)
         self.assertNotIn('"TOKEN"', final)
         self.assertIn("TOKEN", final)
-        for name in ("ALL.md", "RAW.md", "RECORDS.csv", "OBSERVATIONS.csv", "SUMMARY.md", "manifest.json"):
+        for name in ("ALL.md", "RAW.md", "RECORDS.csv", "OBSERVATIONS.csv", "PROMPTS.jsonl", "SUMMARY.md", "manifest.json"):
             self.assertTrue((run_dir / name).is_file(), name)
+        prompt_rows = [json.loads(line) for line in (run_dir / "PROMPTS.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(prompt_rows), 8)
+        self.assertEqual(
+            list(prompt_rows[0]), ["sequence", "model", "repeat", "input", "mode", "prompt"]
+        )
+        self.assertEqual(prompt_rows[0]["model"], "model-a")
+        self.assertEqual(prompt_rows[0]["repeat"], 1)
+        self.assertIn("result: TOKEN", prompt_rows[0]["prompt"])
         manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["request_order"], "model -> repeat -> input")
         self.assertEqual(manifest["failures"], [])
@@ -242,6 +251,7 @@ class EngineTests(unittest.TestCase):
         self.assertFalse((run_dir / "RAW.md").exists())
         self.assertFalse((run_dir / "RECORDS.csv").exists())
         self.assertFalse((run_dir / "SUMMARY.md").exists())
+        self.assertFalse((run_dir / "PROMPTS.jsonl").exists())
 
     def test_resume_skips_successful_items(self) -> None:
         run_batch(self.options(), log=lambda _message: None)

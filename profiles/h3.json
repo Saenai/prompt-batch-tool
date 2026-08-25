@@ -87,6 +87,7 @@
   "output": {
     "run_prefix": "h3-prompts",
     "aggregate_title": "MiniMax H3 Final Prompts",
-    "all_outputs_file": "ALL-PROMPTS.html"
+    "all_outputs_file": "ALL-PROMPTS.html",
+    "structured_outputs_file": "prompts.jsonl"
   }
 }

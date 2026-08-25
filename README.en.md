@@ -58,7 +58,7 @@ Add `--validate-only` to validate configuration and inputs without starting the 
 - Scan recent runs under the current output root and open aggregate results, summaries, or run folders directly.
 - Drive modes, system prompts, request parameters, validation, and observations through profiles.
 - Write atomic per-request records with resume and failed-only retry support.
-- Keep raw responses, deliverable results, aggregate Markdown, CSV, and manifests separate.
+- Keep raw responses, deliverable results, profile-declared aggregate reports (HTML, JSONL, and more), and manifests separate.
 - Validate the core, GUI imports, CLI, package, and compatibility wrappers on Windows CI.
 
 ## Repository layout
