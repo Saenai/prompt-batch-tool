@@ -9,6 +9,7 @@
 | [architecture.md](architecture.md) | 模块职责、依赖方向、扩展点 | 开发者 |
 | [naming.md](naming.md) | 代码、配置和领域术语的命名约定 | 所有维护者 |
 | [development.md](development.md) | 测试、改动流程和维护检查项 | 开发者 |
+| [evaluation-h3.zh-CN.md](evaluation-h3.zh-CN.md) | H3 prompt 的 Agent、创作与稳定性横评标准 | 评测执行者 |
 
 面向首次使用者的最短入口仍是仓库根目录的 [README](../README.md)。版本变化记录在 [CHANGELOG](../CHANGELOG.md)。
 
