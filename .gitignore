@@ -1,5 +1,9 @@
 # User-local GUI state
 state/
+config/app.local.json
+profiles.local/
+profiles/h3-system-prompts/
+runtime/
 
 # Python caches and local environments
 __pycache__/

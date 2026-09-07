@@ -9,10 +9,10 @@
     "profiles": "../profiles",
     "state": "../state/gui-state.json",
     "default_output_root": "../output",
-    "model_config": "../../llama-swap/config.d",
-    "router_executable": "../../llama-swap/llama-swap.exe",
-    "router_working_directory": "../../llama-swap",
-    "runtime_executable": "../../llama-current/llama-server.exe"
+    "model_config": "../runtime/config.yaml",
+    "router_executable": "../runtime/llama-swap.exe",
+    "router_working_directory": "../runtime",
+    "runtime_executable": "../runtime/llama-server.exe"
   },
   "backend": {
     "adapter": "openai-chat-completions",
@@ -27,6 +27,7 @@
     }
   },
   "router": {
+    "auto_start": false,
     "arguments": [
       "--config",
       "config.yaml",
@@ -41,7 +42,11 @@
     ],
     "control_base_url": "http://127.0.0.1:8081",
     "unload_all_endpoint": "/api/models/unload",
-    "control_timeout_seconds": 30
+    "control_timeout_seconds": 30,
+    "control_enabled": false,
+    "auth": {
+      "type": "none"
+    }
   },
   "runtime": {
     "version_arguments": [
@@ -61,25 +66,13 @@
   "model_source": {
     "fallback_format": "llama-swap-yaml",
     "grouping": {
-      "enabled": true,
+      "enabled": false,
       "pattern": "^([^-]+)",
       "match_group": 1,
       "fallback_group": "other",
       "fallback_label": "其他",
-      "aliases": {
-        "qwen3.6": "Qwen 3.6",
-        "gemma4": "Gemma 4",
-        "ornith": "Ornith",
-        "qwen3": "Qwen 3",
-        "muse": "Muse"
-      },
-      "order": [
-        "qwen3.6",
-        "gemma4",
-        "ornith",
-        "qwen3",
-        "muse"
-      ],
+      "aliases": {},
+      "order": [],
       "parameter_tiers": {
         "enabled": true,
         "pattern": "(?:^|-)(\\d+(?:\\.\\d+)?[bB])(?:-a(\\d+(?:\\.\\d+)?[bB]))?(?:-|$)",
@@ -92,7 +85,7 @@
     }
   },
   "defaults": {
-    "profile": "h3",
+    "profile": "plain",
     "mode": "auto",
     "repeats": 3,
     "max_tokens": 16384,

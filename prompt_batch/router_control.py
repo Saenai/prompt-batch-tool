@@ -24,6 +24,8 @@ def unload_all_models(
     router_config: dict[str, Any],
     auth_config: dict[str, Any],
 ) -> RouterControlResult:
+    if not router_config.get("control_enabled", True):
+        raise RouterControlError("Router control is disabled")
     uri = join_endpoint(
         str(router_config["control_base_url"]),
         str(router_config["unload_all_endpoint"]),

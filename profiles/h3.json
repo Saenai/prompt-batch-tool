@@ -4,7 +4,7 @@
   "id": "h3",
   "display_name": "MiniMax H3 Prompt",
   "description": "MiniMax H3 五种 mode 的结构化 prompt 生成。",
-  "system_prompt_root": "${USERPROFILE}/ROOT/Workspaces/Minimax-H3-Skill",
+  "system_prompt_root": "./h3-system-prompts",
   "default_mode": "t2va",
   "allow_auto_mode": true,
   "mode_detection": {

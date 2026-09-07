@@ -12,7 +12,7 @@ CI は各 commit に対して Windows x64 用ポータブル ZIP を生成しま
 
 `main` の build が成功すると、rolling [Continuous prerelease](https://github.com/Saenai/prompt-batch-tool/releases/tag/continuous) が自動更新されます。`v*` tag を push した場合は変更されない versioned release を公開します。どちらにも ZIP と SHA-256 checksum が含まれます。
 
-展開後は `PromptBatchGenerator.exe` を直接実行できます。`launch-gui.cmd` は互換 launcher として残しています。既定パスは `.llama.cpp/prompt-batch-tool` に配置し、隣接する `llama-swap` と `llama-current` を利用する構成です。別の配置では `config/app.json` を編集します。
+展開後は `PromptBatchGenerator.exe` を直接実行できます。`launch-gui.cmd` は互換 launcher として残しています。親ディレクトリの構成は固定しません。環境固有のパスは Git 対象外の `config/app.local.json` に設定します。[設定の分離](docs/local-deployment.md)を参照してください。
 
 ## ソース版のクイックスタート
 
@@ -90,7 +90,7 @@ packaging/windows/          Windows ポータブル版 build script
 
 アプリケーション設定と profile は version 管理され、実行時に検証されます。`schemas/` は editor 向け JSON Schema も提供します。
 
-新規環境の既定出力先は application directory 配下の `output/` です。GUI state に既存の出力 path が保存されている場合は、その値を優先し、upgrade 時に作業先を勝手に変更しません。
+公開設定 config/app.json はツール内の output/ を使用します。環境固有設定は Git 対象外の config/app.local.json に保存します。GUI は local 設定を優先し、明示的な --config はそれを上書きします。CLI では --app-config で指定します。
 
 ## 互換性
 

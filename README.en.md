@@ -12,7 +12,7 @@ CI builds a Windows x64 portable ZIP for every commit. It contains the GUI execu
 
 A successful `main` build automatically updates the rolling [Continuous prerelease](https://github.com/Saenai/prompt-batch-tool/releases/tag/continuous). Pushing a `v*` tag publishes an immutable versioned release. Both include the portable ZIP and its SHA-256 checksum.
 
-Extract the archive and run `PromptBatchGenerator.exe` directly; `launch-gui.cmd` remains as a compatibility launcher. The default paths assume this folder is installed as `.llama.cpp/prompt-batch-tool`, next to `llama-swap` and `llama-current`; edit `config/app.json` for other layouts.
+Extract the archive and run `PromptBatchGenerator.exe` directly; `launch-gui.cmd` remains as a compatibility launcher. The public defaults do not require a parent workspace layout. Put deployment-specific paths in ignored `config/app.local.json`; see [local deployment](docs/local-deployment.md).
 
 ## Quick start from source
 
@@ -90,7 +90,7 @@ Paths are resolved relative to their configuration file and support `~`, `%ENV_V
 
 Application configuration and profiles are versioned and validated at runtime. The `schemas/` directory also provides JSON Schema files for editors.
 
-Fresh installations write to `output/` under the application directory. A path already saved in GUI state continues to override this default so upgrades do not silently redirect existing work.
+Public config/app.json defaults to output/ inside the tool. Keep deployment settings in ignored config/app.local.json. The GUI selects the local file when present; explicit --config takes precedence. CLI callers select a file with --app-config. Saved GUI output paths still take precedence.
 
 ## Compatibility
 

@@ -1,0 +1,5 @@
+{
+  "inputs": [
+    {"id": "greeting", "content": "Write a short greeting.", "mode": "default"}
+  ]
+}

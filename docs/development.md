@@ -33,6 +33,8 @@ python -m pip install pyinstaller==6.21.0
 .\packaging\windows\build-release.ps1 -Version dev -OutputDirectory artifacts
 ```
 
+如果 `python` 命令不可用或需要指定构建环境，可传入 `-PythonExecutable <python.exe完整路径>`。GUI `--self-test` 允许没有本地模型配置的 API-only 部署；它不验证远端 API 可用性。
+
 GUI 和 CLI 分成两个 executable：GUI 使用 windowed subsystem，不弹出控制台；CLI 保留 stdout/stderr，供 GUI 的 JSONL 进度协议和命令行使用。强行把两者压成一个 windowed exe 会失去可靠的标准输出，因此“两枚 exe、一个便携 ZIP”是刻意选择，并非打包工具心血来潮。
 
 ## 改动落点

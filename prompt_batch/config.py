@@ -119,6 +119,17 @@ def validate_app_config(config: dict[str, Any]) -> None:
         _string(auth.get("prefix", "Bearer "), "backend.auth.prefix", allow_empty=True)
 
     router = _mapping(_required(config, "router", "app config"), "router")
+    if not isinstance(router.get("auto_start", True), bool):
+        raise ConfigValidationError("router.auto_start must be a boolean")
+    if not isinstance(router.get("control_enabled", True), bool):
+        raise ConfigValidationError("router.control_enabled must be a boolean")
+    control_auth = _mapping(router.get("auth", {"type": "none"}), "router.auth")
+    if control_auth.get("type", "none") not in {"none", "environment"}:
+        raise ConfigValidationError("Unsupported router.auth.type")
+    if control_auth.get("type") == "environment":
+        _string(_required(control_auth, "environment_variable", "router.auth"), "router.auth.environment_variable")
+        _string(control_auth.get("header", "Authorization"), "router.auth.header")
+        _string(control_auth.get("prefix", "Bearer "), "router.auth.prefix", allow_empty=True)
     _string_list(_required(router, "arguments", "router"), "router.arguments")
     _string_list(_required(router, "managed_process_names", "router"), "router.managed_process_names")
     _string(_required(router, "control_base_url", "router"), "router.control_base_url")

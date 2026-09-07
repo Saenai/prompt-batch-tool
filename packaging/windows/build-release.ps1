@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)] [string]$Version,
-    [string]$OutputDirectory = 'artifacts'
+    [string]$OutputDirectory = 'artifacts',
+    [string]$PythonExecutable = 'python'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,12 +45,12 @@ New-Item -ItemType Directory -Path $packagePath -Force | Out-Null
 try {
     Push-Location $projectRoot
     try {
-        & python -B -m PyInstaller --noconfirm --clean --onefile --windowed --noupx `
+        & $PythonExecutable -B -m PyInstaller --noconfirm --clean --onefile --windowed --noupx `
             --name PromptBatchGenerator --distpath $binaryDirectory `
             --workpath (Join-Path $temporaryRoot 'gui-work') --specpath (Join-Path $temporaryRoot 'spec') app.py
         if ($LASTEXITCODE -ne 0) { throw "GUI packaging failed with exit code $LASTEXITCODE" }
 
-        & python -B -m PyInstaller --noconfirm --clean --onefile --console --noupx `
+        & $PythonExecutable -B -m PyInstaller --noconfirm --clean --onefile --console --noupx `
             --name PromptBatchCLI --distpath $binaryDirectory `
             --workpath (Join-Path $temporaryRoot 'cli-work') --specpath (Join-Path $temporaryRoot 'spec') batch_cli.py
         if ($LASTEXITCODE -ne 0) { throw "CLI packaging failed with exit code $LASTEXITCODE" }
@@ -59,7 +60,13 @@ try {
 
     Copy-Item -LiteralPath (Join-Path $binaryDirectory 'PromptBatchGenerator.exe') -Destination $packagePath
     Copy-Item -LiteralPath (Join-Path $binaryDirectory 'PromptBatchCLI.exe') -Destination $packagePath
-    foreach ($directory in @('config', 'profiles', 'schemas', 'docs')) {
+    New-Item -ItemType Directory -Path (Join-Path $packagePath 'config') -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'config/app.json') -Destination (Join-Path $packagePath 'config/app.json')
+    New-Item -ItemType Directory -Path (Join-Path $packagePath 'profiles') -Force | Out-Null
+    foreach ($profile in @('plain.json', 'h3.json')) {
+        Copy-Item -LiteralPath (Join-Path $projectRoot "profiles/$profile") -Destination (Join-Path $packagePath "profiles/$profile")
+    }
+    foreach ($directory in @('schemas', 'docs', 'examples')) {
         Copy-Item -LiteralPath (Join-Path $projectRoot $directory) -Destination $packagePath -Recurse
     }
     foreach ($file in @('README.md', 'README.en.md', 'README.ja.md', 'CHANGELOG.md')) {

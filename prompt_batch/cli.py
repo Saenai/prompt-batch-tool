@@ -36,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    # Redirected Windows streams otherwise inherit a locale code page that
+    # cannot represent every valid input/output path.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8')
     args = build_parser().parse_args()
     app_defaults = load_app_config(args.app_config).get("defaults", {})
     if args.random_seed is True and args.seed_base is not None:

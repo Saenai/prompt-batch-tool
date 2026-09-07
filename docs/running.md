@@ -4,7 +4,7 @@
 
 CI artifact 和版本 Release 提供 Windows x64 便携 ZIP。解压后可直接运行 `PromptBatchGenerator.exe`；`launch-gui.cmd` 继续作为兼容入口。包内另含供 GUI 调用的 `PromptBatchCLI.exe`，无需安装 Python。
 
-默认 `config/app.json` 假定该目录与 `llama-swap`、`llama-current` 处于既定的 `.llama.cpp` 结构。若移动到其他目录，应调整相对路径。每个发布 ZIP 都附带 `.sha256` 文件用于完整性核对。
+公共配置不要求固定父目录结构。本机可执行文件、profile 和输出位置放入不入库的 `config/app.local.json`；GUI 自动优先选择它，CLI 显式选择配置。每个发布 ZIP 都附带 `.sha256` 文件用于完整性核对。
 
 ## GUI
 

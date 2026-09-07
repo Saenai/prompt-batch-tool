@@ -51,16 +51,20 @@ def start_router(prepared: PreparedBatch, log_dir: Path) -> subprocess.Popen[Any
 
 
 def runtime_version(prepared: PreparedBatch) -> str | None:
+    app = prepared.app_config
+    if (not app['router'].get('auto_start', True)
+            or prepared.base_url.rstrip('/') != str(app['backend']['base_url']).rstrip('/')):
+        return None
     executable = prepared.paths.get("runtime_executable")
     if not executable or not executable.is_file():
         return None
-    result = subprocess.run(
-        [str(executable), *[str(arg) for arg in prepared.app_config.get("runtime", {}).get("version_arguments", [])]],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
-    return (result.stdout + result.stderr).strip()
+    try:
+        result = subprocess.run(
+            [str(executable), *[str(arg) for arg in app.get("runtime", {}).get("version_arguments", [])]],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            check=False, timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return (result.stdout + result.stderr).strip() or None if result.returncode == 0 else None

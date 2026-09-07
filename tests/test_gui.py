@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,7 +19,13 @@ class GuiCommandTests(unittest.TestCase):
         self.assertEqual(command, ["PromptBatchCLI.exe"])
 
     def test_default_config_is_relative_to_application_root(self) -> None:
-        self.assertEqual(default_config_path(), Path(__file__).resolve().parents[1] / "config" / "app.json")
+        with tempfile.TemporaryDirectory() as directory, patch("prompt_batch.gui.PROJECT_ROOT", Path(directory)):
+            expected = Path(directory) / "config" / "app.json"
+            self.assertEqual(default_config_path(), expected)
+            expected.parent.mkdir()
+            local = expected.with_name("app.local.json")
+            local.write_text("{}", encoding="utf-8")
+            self.assertEqual(default_config_path(), local)
 
 
 if __name__ == "__main__":

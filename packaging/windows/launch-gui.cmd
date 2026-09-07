@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-start "" "%~dp0PromptBatchGenerator.exe" --config "%~dp0config\app.json"
+start "" "%~dp0PromptBatchGenerator.exe"

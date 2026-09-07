@@ -14,9 +14,11 @@
 
 应用配置当前为 `schema_version: 4`。程序可在内存中迁移 v1–v3 配置，但不会偷偷改写原文件；高于当前支持版本的配置会被拒绝。
 
-默认输出根目录为相对于应用配置的 `../output`，即源码版或便携版程序根目录下的 `output/`。GUI 状态中已经保存的路径仍会覆盖该默认值。
+公共配置 `config/app.json` 默认写入工具内 `output/`；本机部署使用不入库的完整配置 `config/app.local.json`。GUI 优先选择本机配置，显式 --config 始终优先；CLI 使用 --app-config 明确选配置。保存的 GUI 输出路径仍优先。
 
-`router.control_base_url`、`router.unload_all_endpoint` 与 `router.control_timeout_seconds` 定义 llama-swap 控制 API。默认按钮调用 `POST /api/models/unload`；地址与超时不写死在 Python 中。若后端认证引用环境变量，控制请求复用相同认证头，但不会把密钥写入状态或日志。
+`router.control_base_url`、`router.unload_all_endpoint` 与 `router.control_timeout_seconds` 定义 llama-swap 控制 API。公共配置通过 `router.control_enabled: false` 禁用控制；启用后按钮调用 `POST /api/models/unload`。控制认证使用独立的 `router.auth`，默认无认证，不复用 `backend.auth`。详细配置见[本机部署](local-deployment.md)。
+
+`router.auto_start` 为 false 时，端点不可用只报告错误，不启动本地进程。公共配置默认 false；本机按需设为 true，并配置可执行文件和参数。旧配置省略此字段时保持 true，避免改变原部署行为。
 
 `result_browser.max_entries` 限制 GUI 展示的近期任务数。扫描只检查输出根目录的一级子目录，并优先读取 manifest 记录的聚合文件名，因此不会随逐项结果数量线性膨胀。
 

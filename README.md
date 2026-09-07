@@ -10,7 +10,7 @@
 
 CI 会为每次提交构建 Windows x64 便携 ZIP，其中包含 GUI、CLI、默认配置、profile、schema 和文档，无需预装 Python。`main` 构建成功后会自动更新 [Continuous prerelease](https://github.com/Saenai/prompt-batch-tool/releases/tag/continuous)；推送 `v*` tag 时则发布不可变的正式版本。两者均附带 ZIP 和 SHA-256 校验文件。
 
-解压后可直接运行 `PromptBatchGenerator.exe`，`launch-gui.cmd` 作为兼容启动入口继续保留。默认目录关系按 `.llama.cpp/prompt-batch-tool`、相邻 `llama-swap` 和 `llama-current` 设计；放到其他位置时应修改 `config/app.json`。
+解压后可运行 PromptBatchGenerator.exe。默认使用已启动的 OpenAI-compatible API；如需本地路由器自动启动，请在 app.local.json 中配置自己的可执行文件和参数。无需固定的父目录结构。
 
 ## 快速开始
 
@@ -96,11 +96,13 @@ packaging/windows/          Windows 便携包构建脚本
 
 ## 配置说明
 
-所有配置路径相对于其配置文件解析，并支持 `~`、`%ENV_VAR%` 和 `${ENV_VAR}`。示例 `profiles/h3.json` 会引用仓库外的 MiniMax H3 system prompt；这是部署配置，不是 Python 源码中的本机路径。
+[公共配置与本机部署](docs/local-deployment.md)包含配置优先级、离线示例和发布边界。
+
+所有配置路径相对于所选配置文件解析，支持 ~ 和环境变量。plain profile 无外部提示词依赖；H3 profile 需要自行提供其声明的 system prompt 文件，公共示例不绑定本机技能目录。
 
 应用配置和 profile 均带版本号，并由程序执行运行时校验；`schemas/` 同时为编辑器提供 JSON Schema。
 
-新安装默认写入程序目录下的 `output/`。GUI 状态中已记住的输出路径仍优先于默认值，避免升级时擅自改动既有工作目录。
+公共配置 `config/app.json` 默认写入工具内 `output/`；本机部署使用不入库的完整配置 `config/app.local.json`。GUI 优先选择本机配置，显式 --config 始终优先；CLI 使用 --app-config 明确选配置。保存的 GUI 输出路径仍优先。
 
 ## 兼容性
 

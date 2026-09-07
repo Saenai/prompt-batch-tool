@@ -128,7 +128,7 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
     backend = create_backend(app["backend"], prepared.base_url)
     models_uri = backend.models_uri
     configured_base = str(app["backend"]["base_url"]).rstrip("/")
-    may_start_router = prepared.base_url.rstrip("/") == configured_base
+    may_start_router = bool(app["router"].get("auto_start", True)) and prepared.base_url.rstrip("/") == configured_base
     router_process: subprocess.Popen[Any] | None = None
     records: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
@@ -206,7 +206,7 @@ def run_batch(options: BatchOptions, log: LogFunction = print, event: EventFunct
     try:
         if planned_requests and not backend.ready():
             if not may_start_router:
-                raise RuntimeError(f"Endpoint is unavailable and does not match the configured local router URL: {models_uri}")
+                raise RuntimeError(f"Endpoint is unavailable; local router auto-start is disabled or the endpoint differs from the configured URL: {models_uri}")
             router_process = start_router(prepared, log_dir)
             manifest["router_started_by_script"] = True
             atomic_write_json(manifest_path, manifest)

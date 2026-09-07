@@ -4,7 +4,7 @@ import subprocess
 import unittest
 from unittest.mock import MagicMock, patch
 
-from prompt_batch.runtime import terminate_process_tree
+from prompt_batch.runtime import terminate_process_tree, runtime_version
 
 
 def process(*, running: bool = True) -> MagicMock:
@@ -15,6 +15,26 @@ def process(*, running: bool = True) -> MagicMock:
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_optional_version_probe_is_bounded_and_failure_tolerant(self):
+        prepared = MagicMock()
+        prepared.app_config = {'router': {'auto_start': True}, 'backend': {'base_url': 'http://localhost/v1'}}
+        prepared.base_url = 'http://localhost/v1'
+        for error in (OSError('missing DLL'), subprocess.TimeoutExpired('version', 10)):
+            with self.subTest(error=error), patch('prompt_batch.runtime.subprocess.run', side_effect=error) as run:
+                self.assertIsNone(runtime_version(prepared))
+                self.assertEqual(run.call_args.kwargs['timeout'], 10)
+
+    def test_external_backend_does_not_probe_local_executable(self):
+        prepared = MagicMock()
+        prepared.app_config = {'router': {'auto_start': True}, 'backend': {'base_url': 'http://localhost/v1'}}
+        prepared.base_url = 'https://remote.invalid/v1'
+        with patch('prompt_batch.runtime.subprocess.run') as run:
+            self.assertIsNone(runtime_version(prepared))
+            prepared.base_url = 'http://localhost/v1'
+            prepared.app_config['router']['auto_start'] = False
+            self.assertIsNone(runtime_version(prepared))
+            run.assert_not_called()
+
     def test_finished_process_is_left_untouched(self) -> None:
         value = process(running=False)
         terminate_process_tree(value)

@@ -48,7 +48,8 @@ def engine_command(engine_path: Path) -> list[str]:
 
 
 def default_config_path() -> Path:
-    return PROJECT_ROOT / "config" / "app.json"
+    local = PROJECT_ROOT / "config" / "app.local.json"
+    return local if local.is_file() else PROJECT_ROOT / "config" / "app.json"
 
 
 class PromptBatchApp:
@@ -221,6 +222,8 @@ class PromptBatchApp:
         ttk.Button(backend, text="刷新模型", command=self.refresh_models).grid(row=0, column=2, sticky="ew")
         self.unload_button = ttk.Button(backend, text="卸载全部模型", command=self.unload_all)
         self.unload_button.grid(row=0, column=3, sticky="ew", padx=(6, 0))
+        if not self.config["router"].get("control_enabled", True):
+            self.unload_button.configure(state="disabled")
 
         models_area = ttk.LabelFrame(right, text="模型选择", padding=6)
         models_area.grid(row=1, column=0, sticky="nsew", pady=(0, 8))
@@ -352,11 +355,11 @@ class PromptBatchApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def unload_all(self) -> None:
-        if self.process is not None or self.unload_in_progress:
+        if self.process is not None or self.unload_in_progress or not self.config["router"].get("control_enabled", True):
             return
         if not messagebox.askyesno(
             "卸载全部模型",
-            "将通过 llama-swap 停止所有当前已加载模型并释放其显存。继续？",
+            f"将通过 {self.config['router']['control_base_url']} 的 llama-swap 卸载全部模型。继续？",
             parent=self.root,
         ):
             return
@@ -369,7 +372,7 @@ class PromptBatchApp:
 
         def worker() -> None:
             try:
-                result = unload_all_models(self.config["router"], self.config["backend"].get("auth", {"type": "none"}))
+                result = unload_all_models(self.config["router"], self.config["router"].get("auth", {"type": "none"}))
             except Exception as exc:
                 self.events.put(("unload_error", str(exc)))
             else:
@@ -618,7 +621,7 @@ class PromptBatchApp:
                     self.unload_in_progress = False
                     self.start_button.configure(state="normal")
                     self.validate_button.configure(state="normal")
-                    self.unload_button.configure(state="normal")
+                    self.unload_button.configure(state="normal" if self.config["router"].get("control_enabled", True) else "disabled")
                     self.status_var.set("模型已卸载")
                     response_text = getattr(value, "response_text", "")
                     suffix = f"：{response_text}" if response_text else ""
@@ -627,7 +630,7 @@ class PromptBatchApp:
                     self.unload_in_progress = False
                     self.start_button.configure(state="normal")
                     self.validate_button.configure(state="normal")
-                    self.unload_button.configure(state="normal")
+                    self.unload_button.configure(state="normal" if self.config["router"].get("control_enabled", True) else "disabled")
                     self.status_var.set("卸载失败")
                     self._append_log(f"! {value}\n")
                     messagebox.showerror("卸载失败", str(value), parent=self.root)
@@ -644,7 +647,7 @@ class PromptBatchApp:
                     self.start_button.configure(state="normal")
                     self.validate_button.configure(state="normal")
                     self.cancel_button.configure(state="disabled")
-                    self.unload_button.configure(state="normal")
+                    self.unload_button.configure(state="normal" if self.config["router"].get("control_enabled", True) else "disabled")
                     self.status_var.set("完成" if code == 0 else f"失败（exit {code}）")
                     self._append_log(f"\n> 进程结束，exit code {code}\n")
         except queue.Empty:
@@ -686,7 +689,9 @@ def self_test(config_path: Path) -> int:
               "state_path": str(paths["state"]), "python": sys.executable, "tk_version": tk.TkVersion}
     if sys.stdout is not None:
         print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result["engine_exists"] and profiles and models and groups else 1
+    # A local model registry is optional for API-only deployments.
+    registry_ok = not result["model_config_exists"] or bool(models and groups)
+    return 0 if result["engine_exists"] and profiles and registry_ok else 1
 
 
 def main() -> int:

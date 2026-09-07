@@ -31,6 +31,27 @@ def router_config() -> dict:
 
 
 class RouterControlTests(unittest.TestCase):
+    def test_disabled_control_never_sends_request(self):
+        config = dict(router_config(), control_enabled=False)
+        with patch('urllib.request.urlopen') as request:
+            with self.assertRaisesRegex(RouterControlError, 'disabled'):
+                unload_all_models(config, {'type': 'none'})
+            request.assert_not_called()
+
+    def test_gui_does_not_forward_backend_credentials(self):
+        from unittest.mock import Mock
+        from prompt_batch.gui import PromptBatchApp
+        app = Mock()
+        app.process = None
+        app.unload_in_progress = False
+        app.config = {'router': router_config(), 'backend': {'auth': {
+            'type': 'environment', 'environment_variable': 'PRIVATE_API_KEY'}}}
+        with patch('prompt_batch.gui.messagebox.askyesno', return_value=True), patch(
+            'prompt_batch.gui.threading.Thread') as thread, patch('prompt_batch.gui.unload_all_models') as unload:
+            PromptBatchApp.unload_all(app)
+            thread.call_args.kwargs['target']()
+            self.assertEqual(unload.call_args.args[1], {'type': 'none'})
+
     def test_posts_to_configured_unload_endpoint(self) -> None:
         with patch("urllib.request.urlopen", return_value=FakeResponse()) as urlopen:
             result = unload_all_models(router_config(), {"type": "none"})
