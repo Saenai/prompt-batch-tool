@@ -104,7 +104,7 @@ jobs:
             -RedirectStandardOutput (Join-Path $package.Parent.FullName 'gui-self-test.stdout.log') `
             -RedirectStandardError (Join-Path $package.Parent.FullName 'gui-self-test.stderr.log') `
             -WindowStyle Hidden -PassThru
-          if (-not $gui.WaitForExit(60_000)) {
+          if (-not $gui.WaitForExit(60000)) {
             & taskkill /PID $gui.Id /T /F
             throw 'Packaged GUI self-test timed out after 60 seconds.'
           }
