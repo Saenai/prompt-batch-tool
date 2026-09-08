@@ -89,6 +89,14 @@ jobs:
           }
           .\packaging\windows\build-release.ps1 -Version $version -OutputDirectory artifacts
 
+      - name: Diagnose packaged GUI imports
+        shell: pwsh
+        run: |
+          python -B -m PyInstaller --noconfirm --onefile --console --noupx --name GuiDiagnostic --distpath artifacts/diagnostic --workpath artifacts/diagnostic-work --specpath artifacts app.py
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic packaging failed' }
+          & .\artifacts\diagnostic\GuiDiagnostic.exe --config .\artifacts\prompt-batch-tool\config\app.json --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged GUI diagnostic failed' }
+
       - name: Smoke-test packaged executables
         shell: pwsh
         run: |
