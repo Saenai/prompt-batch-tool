@@ -97,13 +97,21 @@ jobs:
           & (Join-Path $package.FullName 'PromptBatchCLI.exe') --help | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "Packaged CLI failed: $LASTEXITCODE" }
 
-          $fallback = Join-Path $package.Parent.FullName 'llama-swap\config.yaml'
-          New-Item -ItemType Directory -Path (Split-Path $fallback) -Force | Out-Null
-          "models:`n  smoke-model:`n    name: Smoke Model" | Set-Content -Encoding UTF8 $fallback
+          # The windowed GUI must not inherit the runner's redirected handles.
+          # Bound both the wait and process-tree cleanup so CI cannot hang here.
           $gui = Start-Process -FilePath (Join-Path $package.FullName 'PromptBatchGenerator.exe') `
             -ArgumentList @('--config', (Join-Path $package.FullName 'config\app.json'), '--self-test') `
-            -WindowStyle Hidden -Wait -PassThru
-          if ($gui.ExitCode -ne 0) { throw "Packaged GUI self-test failed: $($gui.ExitCode)" }
+            -RedirectStandardOutput (Join-Path $package.Parent.FullName 'gui-self-test.stdout.log') `
+            -RedirectStandardError (Join-Path $package.Parent.FullName 'gui-self-test.stderr.log') `
+            -WindowStyle Hidden -PassThru
+          if (-not $gui.WaitForExit(60_000)) {
+            & taskkill /PID $gui.Id /T /F
+            throw 'Packaged GUI self-test timed out after 60 seconds.'
+          }
+          if ($gui.ExitCode -ne 0) {
+            Get-Content (Join-Path $package.Parent.FullName 'gui-self-test.stderr.log')
+            throw "Packaged GUI self-test failed: $($gui.ExitCode)"
+          }
 
       - name: Upload portable package
         uses: actions/upload-artifact@v7
