@@ -10,6 +10,12 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
 
+# PyInstaller requires physical Tcl data; fail before producing a broken GUI.
+& $PythonExecutable -c "import pathlib, tkinter, sys; p = tkinter.Tcl().eval('info library'); print('Tcl data:', p); sys.exit(0 if pathlib.Path(p).is_dir() else 1)"
+if ($LASTEXITCODE -ne 0) {
+    throw 'Tcl data is not available as a directory. Use the documented packaging Python version.'
+}
+
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $outputRoot = if ([IO.Path]::IsPathRooted($OutputDirectory)) {
     [IO.Path]::GetFullPath($OutputDirectory)

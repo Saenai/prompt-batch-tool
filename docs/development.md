@@ -69,3 +69,7 @@ GUI 和 CLI 分成两个 executable：GUI 使用 windowed subsystem，不弹出�
 ## 版本兼容
 
 兼容门面是过渡边界，不是第二套 API。旧名只能转发到新实现；禁止在 `engine.py`、`model_source.py` 或根目录 launcher 中增加业务分支。
+
+便携包 CI 固定 Python 3.14.6 + PyInstaller 6.21.0；源码测试仍覆盖 3.11 和最新 3.14。
+Python 3.14.7 的 CI 环境使用 Tcl/Tk 9 zipfs，当前打包器未收集对应数据，导致冻结 GUI 缺失 `_tcl_data`。
+升级构建解释器前须通过完整 EXE 自检；构建脚本预检 Tcl 数据目录，GUI CI 自检限制 60 秒。
